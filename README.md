@@ -1,0 +1,1 @@
+# mospolytech-schedule-backend
