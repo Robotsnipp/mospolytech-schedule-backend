@@ -1,8 +1,11 @@
-"""URL-конфиг генератора расписания."""
+"""URL-конфиг генератора расписания.
+
+Карта фичи: URL -> представление (api/views.py) -> сервис (services/).
+"""
 
 from django.urls import path
 
-from .views import GenerateView, ScheduleRunDetailView
+from .api.views import GenerateView, ScheduleRunDetailView
 
 urlpatterns = [
     path("generate/", GenerateView.as_view(), name="schedule-generate"),

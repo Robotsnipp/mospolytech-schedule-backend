@@ -14,6 +14,7 @@ from schedule_generator.enums import (
     LessonType,
 )
 from schedule_generator.models import (
+    GenerationRun,
     Group,
     LectureStream,
     LessonEvent,
@@ -27,7 +28,7 @@ from schedule_generator.models import (
     TimeSlot,
     WeekPattern,
 )
-from schedule_generator.views import GenerateView
+from schedule_generator.services import run_generation
 
 
 class Command(BaseCommand):
@@ -41,18 +42,16 @@ class Command(BaseCommand):
 
     def handle(self, *args, **opts):
         semester = self._populate(opts["semester"])
-        wp = semester.week_patterns.first()
-        result = GenerateView.run_generation(
+        # Генерацию запускаем через сервисный слой — ту же точку входа,
+        # что и HTTP API (schedule_generator/services/generation.py).
+        outcome = run_generation(
             semester=semester,
-            week_pattern=wp,
+            week_pattern=semester.week_patterns.first(),
             time_limit_seconds=opts["time_limit"],
             seed=opts["seed"],
             clear_previous=True,
         )
-        from schedule_generator.models import (
-            GenerationRun,
-        )
-        run = GenerationRun.objects.get(pk=result["run_id"])
+        run = GenerationRun.objects.get(pk=outcome.run_id)
         self.stdout.write(self.style.SUCCESS(
             f"Run #{run.pk}: status={run.status}, "
             f"classes={run.scheduled_classes.count()}, "
