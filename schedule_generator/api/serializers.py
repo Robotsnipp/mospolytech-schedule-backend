@@ -26,9 +26,9 @@ class GenerateRequestSerializer(serializers.Serializer):
     )
 
     def validate(self, attrs):
-        wp = attrs.get("week_pattern")
+        week_pattern = attrs.get("week_pattern")
         semester = attrs["semester"]
-        if wp is not None and wp.semester_id != semester.id:
+        if week_pattern is not None and week_pattern.semester_id != semester.id:
             raise serializers.ValidationError(
                 {"week_pattern": "Шаблон недели относится к другому семестру."}
             )

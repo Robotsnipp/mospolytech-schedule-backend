@@ -21,7 +21,7 @@ class EventSpec:
 
     event_id: int
     lesson_type: str
-    fmt: str                      # ONSITE | ONLINE
+    format: str                   # ONSITE | ONLINE
     pairs_per_week: int
     audience_size: int
     teacher_id: int | None

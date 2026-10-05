@@ -14,7 +14,7 @@ from .dto import GenerationResult
 
 
 @transaction.atomic
-def persist_result(*, run, gen: GenerationResult, slots, rooms, events,
+def persist_result(*, run, generation_result: GenerationResult, slots, rooms, events,
                    skipped: list[tuple], clear_previous: bool):
     """Атомарно записывает результат запуска.
 
@@ -25,39 +25,42 @@ def persist_result(*, run, gen: GenerationResult, slots, rooms, events,
        запланированные (unscheduled);
     4. финализируем статус/метрики GenerationRun.
     """
-    slot_by_id = {s.id: s for s in slots}
-    room_ids = {r.id for r in rooms}
+    slot_by_id = {slot.id: slot for slot in slots}
+    known_room_ids = {room.id for room in rooms}
 
     if clear_previous:
         ScheduledClass.objects.filter(run__semester=run.semester).delete()
 
     ScheduledClass.objects.bulk_create([
         ScheduledClass(
-            event_id=a["event_id"],
-            slot=slot_by_id[a["slot_id"]],
-            room_id=a["room_id"] if a["room_id"] in room_ids else None,
+            event_id=assignment["event_id"],
+            slot=slot_by_id[assignment["slot_id"]],
+            room_id=(assignment["room_id"]
+                     if assignment["room_id"] in known_room_ids else None),
             run=run,
         )
-        for a in gen.assignments
+        for assignment in generation_result.assignments
     ])
 
-    for ev, reason in skipped:
+    for skipped_event, reason in skipped:
         GenerationIssue.objects.create(
             run=run, event=None, level="WARNING",
-            text=f"Событие пропущено ({reason}): #{ev.pk} {ev}",
+            text=f"Событие пропущено ({reason}): #{skipped_event.pk} {skipped_event}",
         )
-    unscheduled_ids = set(gen.unscheduled_event_ids)
-    if unscheduled_ids:
-        ev_by_id = {e.id: e for e in events.filter(id__in=unscheduled_ids)}
-        for eid in sorted(unscheduled_ids):
+    unscheduled_event_ids = set(generation_result.unscheduled_event_ids)
+    if unscheduled_event_ids:
+        event_by_id = {event.id: event
+                       for event in events.filter(id__in=unscheduled_event_ids)}
+        for unscheduled_event_id in sorted(unscheduled_event_ids):
             GenerationIssue.objects.create(
-                run=run, event=ev_by_id.get(eid), level="WARNING",
-                text=f"Не все обязательные пары события запланированы: #{eid}",
+                run=run, event=event_by_id.get(unscheduled_event_id), level="WARNING",
+                text=f"Не все обязательные пары события запланированы: "
+                     f"#{unscheduled_event_id}",
             )
 
-    run.status = gen.status
-    run.objective_value = gen.objective_value
-    run.solve_time_seconds = gen.solve_time
-    run.message = gen.message
+    run.status = generation_result.status
+    run.objective_value = generation_result.objective_value
+    run.solve_time_seconds = generation_result.solve_time
+    run.message = generation_result.message
     run.save()
     return run

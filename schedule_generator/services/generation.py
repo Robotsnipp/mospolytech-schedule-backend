@@ -40,8 +40,8 @@ class GenerationError(Exception):
 def load_teacher_limits() -> dict[int, dict]:
     """Справка о преподавателях для мягких ограничений модели."""
     return {
-        t.id: {"max_per_day": t.max_pairs_per_day}
-        for t in Teacher.objects.all()
+        teacher.id: {"max_pairs_per_day": teacher.max_pairs_per_day}
+        for teacher in Teacher.objects.all()
     }
 
 
@@ -74,14 +74,15 @@ def run_generation(*, semester, week_pattern=None, time_limit_seconds=30,
         specs, skipped = build_event_specs(events)
 
         # --- 5. решение ---
-        config = SolverConfig(time_limit_seconds=time_limit_seconds, seed=seed)
-        gen = generate_schedule(
+        solver_config = SolverConfig(time_limit_seconds=time_limit_seconds, seed=seed)
+        generation_result = generate_schedule(
             slots=slots, rooms=rooms, specs=specs,
-            teachers_by_id=load_teacher_limits(), config=config,
+            teachers_by_id=load_teacher_limits(), config=solver_config,
         )
 
         # --- 6. сохранение ---
-        persist_result(run=run, gen=gen, slots=slots, rooms=rooms, events=events,
+        persist_result(run=run, generation_result=generation_result,
+                       slots=slots, rooms=rooms, events=events,
                        skipped=skipped, clear_previous=clear_previous)
     except GenerationError:
         raise
