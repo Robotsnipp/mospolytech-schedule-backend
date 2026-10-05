@@ -69,32 +69,35 @@ def generate_schedule(
     :param slots: iterable TimeSlot (уже только нужного week_pattern)
     :param rooms: iterable Room
     :param specs: результат services/event_specs.build_event_specs
-    :param teachers_by_id: {id: {"max_per_day": int}}
+    :param teachers_by_id: {id: {"max_pairs_per_day": int}}
     :param config: параметры решателя (лимит времени, seed, потоки)
     """
-    cfg = config or SolverConfig()
-    t0 = time.time()
+    solver_config = config or SolverConfig()
+    start_time = time.time()
 
-    model, ctx = _build_model(slots=slots, rooms=rooms, specs=specs,
-                              teachers_by_id=teachers_by_id)
-    if ctx is None:  # пустой шаблон недели — решать нечего
-        return GenerationResult("INFEASIBLE", None, time.time() - t0, [],
-                                [sp.event_id for sp in specs],
+    model, model_context = _build_model(slots=slots, rooms=rooms, specs=specs,
+                                        teachers_by_id=teachers_by_id)
+    if model_context is None:  # пустой шаблон недели — решать нечего
+        return GenerationResult("INFEASIBLE", None, time.time() - start_time, [],
+                                [spec.event_id for spec in specs],
                                 "Нет доступных слотов (шаблон недели пуст).")
 
     solver = cp_model.CpSolver()
-    solver.parameters.max_time_in_seconds = float(cfg.time_limit_seconds)
-    solver.parameters.random_seed = cfg.seed
-    solver.parameters.num_search_workers = cfg.num_search_workers
+    solver.parameters.max_time_in_seconds = float(solver_config.time_limit_seconds)
+    solver.parameters.random_seed = solver_config.seed
+    solver.parameters.num_search_workers = solver_config.num_search_workers
     status = solver.Solve(model)
 
     status_name = solver.StatusName(status)
     feasible = status in (cp_model.OPTIMAL, cp_model.FEASIBLE)
 
-    result = extract_result(solver=solver, status_name=status_name, feasible=feasible,
-                            specs=specs, room_ids=ctx["room_ids"],
-                            x=ctx["x"], y=ctx["y"])
-    result.solve_time = time.time() - t0
+    result = extract_result(
+        solver=solver, status_name=status_name, feasible=feasible,
+        specs=specs, room_ids=model_context["room_ids"],
+        pair_placement_vars=model_context["pair_placement_vars"],
+        onsite_room_choice_vars=model_context["onsite_room_choice_vars"],
+    )
+    result.solve_time = time.time() - start_time
     return result
 
 
@@ -102,64 +105,79 @@ def _build_model(*, slots, rooms, specs: list[EventSpec],
                  teachers_by_id: dict[int, dict]):
     """Собирает CpModel по частям (hard -> soft -> objective).
 
-    Возвращает (model, ctx); ctx — переменные, нужные для извлечения решения.
-    ctx is None, если слотов нет вовсе (задача вырождена).
+    Возвращает (model, model_context); model_context — переменные, нужные для
+    извлечения решения. model_context is None, если слотов нет вовсе
+    (задача вырождена).
     """
     model = cp_model.CpModel()
 
-    slot_list = sorted(slots, key=lambda s: (s.day_of_week, s.lesson_number, s.id))
-    slot_ids = [s.id for s in slot_list]          # упорядочены по (day, lesson_number)
-    slot_day = {s.id: s.day_of_week for s in slot_list}
-    room_ids = [r.id for r in rooms]
-    room_cap = {r.id: r.capacity for r in rooms}
+    slot_list = sorted(slots, key=lambda slot: (slot.day_of_week,
+                                                slot.lesson_number, slot.id))
+    slot_ids = [slot.id for slot in slot_list]   # упорядочены по (day, lesson_number)
+    day_of_week_by_slot_id = {slot.id: slot.day_of_week for slot in slot_list}
+    room_ids = [room.id for room in rooms]
+    capacity_by_room_id = {room.id: room.capacity for room in rooms}
 
     if not slot_ids:
         return model, None
 
     # ---- переменные ----
-    x, y, onsite_ok_rooms = _build_variables(model, specs, slot_ids, room_ids, room_cap)
+    pair_placement_vars, onsite_room_choice_vars, suitable_rooms_by_event_id = \
+        _build_variables(model, specs, slot_ids, room_ids, capacity_by_room_id)
 
     # ---- жёсткие ограничения (services/constraints.py) ----
-    add_lecture_single_slot(model, specs, slot_ids, x)
-    add_room_exclusivity(model, y)
-    add_attendee_exclusivity(model, specs, slot_ids, x)
-    add_teacher_exclusivity(model, specs, slot_ids, x)
-    add_event_pair_vars(model, specs, slot_ids, x)
-    link_onsite_room_vars(model, specs, slot_ids, x, y, onsite_ok_rooms)
+    add_lecture_single_slot(model, specs, slot_ids, pair_placement_vars)
+    add_room_exclusivity(model, onsite_room_choice_vars)
+    add_attendee_exclusivity(model, specs, slot_ids, pair_placement_vars)
+    add_teacher_exclusivity(model, specs, slot_ids, pair_placement_vars)
+    add_event_pair_vars(model, specs, slot_ids, pair_placement_vars)
+    link_onsite_room_vars(model, specs, slot_ids, pair_placement_vars,
+                          onsite_room_choice_vars, suitable_rooms_by_event_id)
 
     # ---- мягкие ограничения и целевая функция (services/objectives.py) ----
-    teacher_over_vars = collect_teacher_overload_penalties(
-        model, specs, slot_day, x, teachers_by_id)
-    window_vars = collect_window_penalties(model, specs, slot_ids, slot_day, x)
-    build_objective(model, specs, slot_ids, x, window_vars, teacher_over_vars)
+    teacher_overload_vars = collect_teacher_overload_penalties(
+        model, specs, day_of_week_by_slot_id, pair_placement_vars, teachers_by_id)
+    window_vars = collect_window_penalties(
+        model, specs, slot_ids, day_of_week_by_slot_id, pair_placement_vars)
+    build_objective(model, specs, slot_ids, pair_placement_vars,
+                    window_vars, teacher_overload_vars)
 
-    return model, {"x": x, "y": y, "room_ids": room_ids}
+    return model, {
+        "pair_placement_vars": pair_placement_vars,
+        "onsite_room_choice_vars": onsite_room_choice_vars,
+        "room_ids": room_ids,
+    }
 
 
 def _build_variables(model: cp_model.CpModel, specs: list[EventSpec],
                      slot_ids: list[int], room_ids: list[int],
-                     room_cap: dict[int, int]):
+                     capacity_by_room_id: dict[int, int]):
     """Создаёт переменные модели.
 
-    x[e, s] — ставить ли пару события e в слот s;
-    y[e, s, r] — очная пара события e в слоте s в аудитории r
-                 (только для очных событий и подходящих по вместимости аудиторий).
+    pair_placement_vars[event_id, slot_id] — ставить ли пару события в слот;
+    onsite_room_choice_vars[event_id, slot_id, room_id] — очная пара события
+        в слоте в данной аудитории
+        (только для очных событий и подходящих по вместимости аудиторий).
     """
-    x = {}
-    for sp in specs:
-        for sid in slot_ids:
-            x[(sp.event_id, sid)] = model.NewBoolVar(f"x_{sp.event_id}_{sid}")
+    pair_placement_vars = {}
+    for spec in specs:
+        for slot_id in slot_ids:
+            pair_placement_vars[(spec.event_id, slot_id)] = model.NewBoolVar(
+                f"place_{spec.event_id}_{slot_id}"
+            )
 
-    y = {}
-    onsite_ok_rooms: dict[int, list[int]] = {}   # event_id -> подходящие аудитории
-    for sp in specs:
-        if sp.fmt != Format.ONSITE:
+    onsite_room_choice_vars = {}
+    suitable_rooms_by_event_id: dict[int, list[int]] = {}   # event_id -> аудитории
+    for spec in specs:
+        if spec.format != Format.ONSITE:
             continue
-        ok_rooms = [rid for rid in room_ids if room_cap[rid] >= sp.audience_size]
-        onsite_ok_rooms[sp.event_id] = ok_rooms
-        for sid in slot_ids:
-            for rid in ok_rooms:
-                y[(sp.event_id, sid, rid)] = model.NewBoolVar(
-                    f"y_{sp.event_id}_{sid}_{rid}"
-                )
-    return x, y, onsite_ok_rooms
+        suitable_room_ids = [
+            room_id for room_id in room_ids
+            if capacity_by_room_id[room_id] >= spec.audience_size
+        ]
+        suitable_rooms_by_event_id[spec.event_id] = suitable_room_ids
+        for slot_id in slot_ids:
+            for room_id in suitable_room_ids:
+                onsite_room_choice_vars[(spec.event_id, slot_id, room_id)] = \
+                    model.NewBoolVar(f"room_{spec.event_id}_{slot_id}_{room_id}")
+    return pair_placement_vars, onsite_room_choice_vars, suitable_rooms_by_event_id

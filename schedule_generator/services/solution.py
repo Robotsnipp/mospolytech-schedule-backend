@@ -15,55 +15,56 @@ from .dto import EventSpec, GenerationResult
 
 def extract_result(solver: cp_model.CpSolver, status_name: str, feasible: bool,
                    specs: list[EventSpec], room_ids: list[int],
-                   x: dict, y: dict) -> GenerationResult:
+                   pair_placement_vars: dict, onsite_room_choice_vars: dict) -> GenerationResult:
     """Формирует GenerationResult по решению CP-SAT.
 
     Статусы: SOLVED — всё встало; PARTIAL — есть unscheduled; INFEASIBLE —
     решения нет вовсе.
     """
     assignments: list[dict] = []
-    unscheduled: list[int] = []
+    unscheduled_event_ids: list[int] = []
 
     if not feasible:
         return GenerationResult(
             status="INFEASIBLE",
             objective_value=None,
-            solve_time=0.0,  # заполняет вызывающий (generator.solve)
+            solve_time=0.0,  # заполняет вызывающий (generator.generate_schedule)
             assignments=[],
-            unscheduled_event_ids=[sp.event_id for sp in specs],
+            unscheduled_event_ids=[spec.event_id for spec in specs],
             message=f"status={status_name}, assigned=0",
         )
 
-    for sp in specs:
-        placed_count = 0
-        for sid in (s for s in _all_slot_ids(x, sp)):
-            if solver.Value(x[(sp.event_id, sid)]):
+    for spec in specs:
+        placed_pairs_count = 0
+        for slot_id in _slot_ids_of_event(pair_placement_vars, spec):
+            if solver.Value(pair_placement_vars[(spec.event_id, slot_id)]):
                 room_id = None
-                if sp.fmt == Format.ONSITE:
-                    for rid in room_ids:
-                        key = (sp.event_id, sid, rid)
-                        if key in y and solver.Value(y[key]):
-                            room_id = rid
+                if spec.format == Format.ONSITE:
+                    for candidate_room_id in room_ids:
+                        choice_key = (spec.event_id, slot_id, candidate_room_id)
+                        if (choice_key in onsite_room_choice_vars
+                                and solver.Value(onsite_room_choice_vars[choice_key])):
+                            room_id = candidate_room_id
                             break
                 assignments.append({
-                    "event_id": sp.event_id, "slot_id": sid, "room_id": room_id,
+                    "event_id": spec.event_id, "slot_id": slot_id, "room_id": room_id,
                 })
-                placed_count += 1
-        if placed_count < sp.pairs_per_week:
-            unscheduled.append(sp.event_id)
+                placed_pairs_count += 1
+        if placed_pairs_count < spec.pairs_per_week:
+            unscheduled_event_ids.append(spec.event_id)
 
-    result_status = "PARTIAL" if unscheduled else "SOLVED"
+    result_status = "PARTIAL" if unscheduled_event_ids else "SOLVED"
     return GenerationResult(
         status=result_status,
         objective_value=solver.ObjectiveValue(),
-        solve_time=0.0,  # заполняет вызывающий (generator.solve)
+        solve_time=0.0,  # заполняет вызывающий (generator.generate_schedule)
         assignments=assignments,
-        unscheduled_event_ids=unscheduled,
+        unscheduled_event_ids=unscheduled_event_ids,
         message=f"status={status_name}, assigned={len(assignments)}",
     )
 
 
-def _all_slot_ids(x: dict, sp: EventSpec):
-    """Слоты события в порядке обхода ключей x (slot_ids отсортированы при
-    построении модели — порядок сохраняется)."""
-    return [key[1] for key in x if key[0] == sp.event_id]
+def _slot_ids_of_event(pair_placement_vars: dict, spec: EventSpec):
+    """Слоты события в порядке обхода ключей pair_placement_vars (slot_ids
+    отсортированы при построении модели — порядок сохраняется)."""
+    return [key[1] for key in pair_placement_vars if key[0] == spec.event_id]

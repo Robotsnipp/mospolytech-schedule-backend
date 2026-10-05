@@ -28,60 +28,60 @@ def build_event_specs(events) -> tuple[list[EventSpec], list[tuple]]:
     (event, причина пропуска); причины уходят в GenerationIssue.
     """
     specs: list[EventSpec] = []
-    skipped = []
-    for ev in events.select_related("group", "stream", "project", "teacher"):
-        if ev.lesson_type in NON_GENERATED_LESSON_TYPES:
+    skipped: list[tuple] = []
+    for event in events.select_related("group", "stream", "project", "teacher"):
+        if event.lesson_type in NON_GENERATED_LESSON_TYPES:
             # физкультура не генерируется: студент приходит в любое
             # время в любое подходящее место — это не событие расписания.
             continue
 
-        fmt = ev.effective_format
-        blocking: set[int] = set()
-        blocking_students: set[int] = set()
+        lesson_format = event.effective_format
+        blocking_group_ids: set[int] = set()
+        blocking_student_ids: set[int] = set()
         stream_id = None
 
-        if ev.lesson_type == LessonType.LECTURE:
-            if not ev.stream_id:
-                skipped.append((ev, "Лекция без лекционного потока."))
+        if event.lesson_type == LessonType.LECTURE:
+            if not event.stream_id:
+                skipped.append((event, "Лекция без лекционного потока."))
                 continue
-            stream_id = ev.stream_id
+            stream_id = event.stream_id
             # все группы потока слушают лекцию -> они заблокированы
-            blocking = set(ev.stream.groups.values_list("id", flat=True))
-            audience = ev.audience_size or sum(
-                g.students.count() for g in ev.stream.groups.all()
+            blocking_group_ids = set(event.stream.groups.values_list("id", flat=True))
+            audience_size = event.audience_size or sum(
+                group.students.count() for group in event.stream.groups.all()
             )
-        elif ev.project_id:
-            if ev.lesson_type != LessonType.PD:
-                skipped.append((ev, "Событие с проектом должно иметь тип ПД."))
+        elif event.project_id:
+            if event.lesson_type != LessonType.PD:
+                skipped.append((event, "Событие с проектом должно иметь тип ПД."))
                 continue
             # ПД: группа проекта = студенты, выбравшие проект.
             # Блокируем именно этих студентов (а не целиком их учебные
             # группы), чтобы остальные студенты тех же групп могли учиться.
-            blocking_students = set(
-                Student.objects.filter(project_choice__project_id=ev.project_id)
+            blocking_student_ids = set(
+                Student.objects.filter(project_choice__project_id=event.project_id)
                 .values_list("id", flat=True)
             )
-            audience = ev.audience_size or len(blocking_students)
-            if not blocking_students:
+            audience_size = event.audience_size or len(blocking_student_ids)
+            if not blocking_student_ids:
                 # никто не выбрал проект — планировать не для кого
-                skipped.append((ev, "По проекту нет выбравших его студентов."))
+                skipped.append((event, "По проекту нет выбравших его студентов."))
                 continue
-        elif ev.group_id:
-            blocking = {ev.group_id}
-            audience = ev.audience_size
+        elif event.group_id:
+            blocking_group_ids = {event.group_id}
+            audience_size = event.audience_size
         else:
-            skipped.append((ev, "У занятия нет носителя (группы/потока/проекта)."))
+            skipped.append((event, "У занятия нет носителя (группы/потока/проекта)."))
             continue
 
         specs.append(EventSpec(
-            event_id=ev.id,
-            lesson_type=ev.lesson_type,
-            fmt=fmt,
-            pairs_per_week=ev.pairs_per_week,
-            audience_size=max(audience, 1),
-            teacher_id=ev.teacher_id,
-            blocking_group_ids=blocking,
-            blocking_student_ids=blocking_students,
+            event_id=event.id,
+            lesson_type=event.lesson_type,
+            format=lesson_format,
+            pairs_per_week=event.pairs_per_week,
+            audience_size=max(audience_size, 1),
+            teacher_id=event.teacher_id,
+            blocking_group_ids=blocking_group_ids,
+            blocking_student_ids=blocking_student_ids,
             stream_id=stream_id,
         ))
     return specs, skipped
