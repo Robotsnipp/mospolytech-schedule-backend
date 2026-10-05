@@ -47,11 +47,11 @@ DEFAULT_FORMAT_BY_TYPE = {
 }
 
 
-def effective_format(lesson_type: str, fmt: str | None) -> str:
+def effective_format(lesson_type: str, event_format: str | None) -> str:
     """Возвращает формат занятия: для жёстких типов — константу,
     иначе — формат из данных (для внеучебки), по умолчанию очный."""
     if lesson_type in DEFAULT_FORMAT_BY_TYPE:
         return DEFAULT_FORMAT_BY_TYPE[lesson_type]
-    if fmt:
-        return fmt
+    if event_format:
+        return event_format
     return Format.ONSITE

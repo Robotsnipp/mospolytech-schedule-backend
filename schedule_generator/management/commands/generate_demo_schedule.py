@@ -14,6 +14,7 @@ from schedule_generator.enums import (
     LessonType,
 )
 from schedule_generator.models import (
+    GenerationRun,
     Group,
     LectureStream,
     LessonEvent,
@@ -27,7 +28,7 @@ from schedule_generator.models import (
     TimeSlot,
     WeekPattern,
 )
-from schedule_generator.views import GenerateView
+from schedule_generator.services import run_generation
 
 
 class Command(BaseCommand):
@@ -41,18 +42,16 @@ class Command(BaseCommand):
 
     def handle(self, *args, **opts):
         semester = self._populate(opts["semester"])
-        wp = semester.week_patterns.first()
-        result = GenerateView.run_generation(
+        # Генерацию запускаем через сервисный слой — ту же точку входа,
+        # что и HTTP API (schedule_generator/services/generation.py).
+        outcome = run_generation(
             semester=semester,
-            week_pattern=wp,
+            week_pattern=semester.week_patterns.first(),
             time_limit_seconds=opts["time_limit"],
             seed=opts["seed"],
             clear_previous=True,
         )
-        from schedule_generator.models import (
-            GenerationRun,
-        )
-        run = GenerationRun.objects.get(pk=result["run_id"])
+        run = GenerationRun.objects.get(pk=outcome.run_id)
         self.stdout.write(self.style.SUCCESS(
             f"Run #{run.pk}: status={run.status}, "
             f"classes={run.scheduled_classes.count()}, "
@@ -69,51 +68,55 @@ class Command(BaseCommand):
         )
 
         # ---- сетка недель: пн-пт, 4 пары ----
-        wp, _ = WeekPattern.objects.get_or_create(semester=semester, name="Базовая неделя")
-        if not wp.slots.exists():
-            for day in range(5):
-                for num in range(1, 5):
+        week_pattern, _ = WeekPattern.objects.get_or_create(
+            semester=semester, name="Базовая неделя")
+        if not week_pattern.slots.exists():
+            for day_of_week in range(5):
+                for lesson_number in range(1, 5):
                     TimeSlot.objects.create(
-                        week_pattern=wp, day_of_week=day, lesson_number=num,
-                        start_time=time(9 + 2 * (num - 1)),
-                        end_time=time(10 + 2 * (num - 1)),
+                        week_pattern=week_pattern, day_of_week=day_of_week,
+                        lesson_number=lesson_number,
+                        start_time=time(9 + 2 * (lesson_number - 1)),
+                        end_time=time(10 + 2 * (lesson_number - 1)),
                     )
 
         # ---- аудитории ----
         rooms = {}
-        for i in range(1, 11):
-            rooms[i], _ = Room.objects.get_or_create(
-                name=f"А-{100 + i}", defaults={"capacity": 30})
-        for i in range(1, 3):
-            rooms[f"big{i}"], _ = Room.objects.get_or_create(
-                name=f"Аудитория {300 + i}", defaults={"capacity": 80})
+        for room_index in range(1, 11):
+            rooms[room_index], _ = Room.objects.get_or_create(
+                name=f"А-{100 + room_index}", defaults={"capacity": 30})
+        for big_room_index in range(1, 3):
+            rooms[f"big{big_room_index}"], _ = Room.objects.get_or_create(
+                name=f"Аудитория {300 + big_room_index}", defaults={"capacity": 80})
 
         # ---- преподаватели ----
         teachers = {}
-        for i in range(1, 9):
-            teachers[i], _ = Teacher.objects.get_or_create(
-                full_name=f"Преподаватель {i}")
+        for teacher_index in range(1, 9):
+            teachers[teacher_index], _ = Teacher.objects.get_or_create(
+                full_name=f"Преподаватель {teacher_index}")
 
         # ---- группы: две обычные и одна «перваки, первый семестр» ----
         groups = {}
-        for gname, is_first in [("ИВМ-81", False), ("БИСО-82", False), ("ПИ-21", True)]:
+        for group_name, is_first_year_first_semester in [
+            ("ИВМ-81", False), ("БИСО-82", False), ("ПИ-21", True),
+        ]:
             group, _ = Group.objects.get_or_create(
-                name=gname,
+                name=group_name,
                 defaults={"semester": semester,
-                          "is_first_year_first_semester": is_first},
+                          "is_first_year_first_semester": is_first_year_first_semester},
             )
-            groups[gname] = group
+            groups[group_name] = group
             if not group.students.exists():
                 Student.objects.bulk_create([
-                    Student(group=group, full_name=f"{gname} Студент {j}")
-                    for j in range(1, 26)
+                    Student(group=group, full_name=f"{group_name} Студент {student_index}")
+                    for student_index in range(1, 26)
                 ])
 
         # ---- дисциплины ----
         subjects = {}
-        for sname in ["Алгоритмы", "Базы данных", "Матанализ", "Физ-ра",
-                      "Веб-разработка", "Клуб робототехники"]:
-            subjects[sname], _ = Subject.objects.get_or_create(name=sname)
+        for subject_name in ["Алгоритмы", "Базы данных", "Матанализ", "Физ-ра",
+                             "Веб-разработка", "Клуб робототехники"]:
+            subjects[subject_name], _ = Subject.objects.get_or_create(name=subject_name)
 
         # ---- лекции онлайн на поток из нескольких групп ----
         stream, _ = LectureStream.objects.get_or_create(
@@ -124,11 +127,12 @@ class Command(BaseCommand):
             semester=semester, subject=subjects["Алгоритмы"],
             lesson_type=LessonType.LECTURE, stream=stream,
             defaults={"teacher": teachers[1], "pairs_per_week": 1,
-                      "audience_size": sum(g.students.count() for g in stream.groups.all())},
+                      "audience_size": sum(group.students.count()
+                                           for group in stream.groups.all())},
         )
 
         # ---- очные практики/лаборатории на каждую группу ----
-        for gname, group in groups.items():
+        for group_name, group in groups.items():
             LessonEvent.objects.get_or_create(
                 semester=semester, subject=subjects["Базы данных"],
                 lesson_type=LessonType.LAB, group=group,

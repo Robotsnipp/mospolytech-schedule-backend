@@ -1,3 +1,13 @@
+"""Админ-интерфейс. Сгруппирован по поддоменам — как и models/.
+
+- Календарь: Semester, WeekPattern (+ inline слотов), TimeSlot;
+- Люди: Group, Student, Teacher;
+- Проекты (ПД): Project, ProjectEnrollment;
+- Ресурсы: Subject, Room, LectureStream;
+- Занятия: LessonEvent (план), ScheduledClass (результат);
+- Генерация: GenerationRun, GenerationIssue.
+"""
+
 from django.contrib import admin
 
 from .models import (
@@ -19,6 +29,8 @@ from .models import (
 )
 
 
+# ---------------- Календарь ----------------
+
 class SlotInline(admin.TabularInline):
     model = TimeSlot
     extra = 0
@@ -35,6 +47,14 @@ class WeekPatternAdmin(admin.ModelAdmin):
     list_display = ("name", "semester", "parity")
 
 
+@admin.register(TimeSlot)
+class TimeSlotAdmin(admin.ModelAdmin):
+    list_display = ("week_pattern", "day_of_week", "lesson_number", "start_time", "end_time")
+    list_filter = ("week_pattern",)
+
+
+# ---------------- Люди ----------------
+
 @admin.register(Group)
 class GroupAdmin(admin.ModelAdmin):
     list_display = ("name", "semester", "is_first_year_first_semester")
@@ -48,6 +68,13 @@ class StudentAdmin(admin.ModelAdmin):
     list_filter = ("group__semester",)
 
 
+@admin.register(Teacher)
+class TeacherAdmin(admin.ModelAdmin):
+    search_fields = ("full_name",)
+
+
+# ---------------- Проекты (ПД) ----------------
+
 @admin.register(Project)
 class ProjectAdmin(admin.ModelAdmin):
     list_display = ("title", "semester", "supervisor", "max_students")
@@ -60,10 +87,7 @@ class ProjectEnrollmentAdmin(admin.ModelAdmin):
     autocomplete_fields = ("student", "project")
 
 
-@admin.register(Teacher)
-class TeacherAdmin(admin.ModelAdmin):
-    search_fields = ("full_name",)
-
+# ---------------- Ресурсы ----------------
 
 @admin.register(Subject)
 class SubjectAdmin(admin.ModelAdmin):
@@ -81,6 +105,8 @@ class LectureStreamAdmin(admin.ModelAdmin):
     filter_horizontal = ("groups",)
 
 
+# ---------------- Занятия ----------------
+
 @admin.register(LessonEvent)
 class LessonEventAdmin(admin.ModelAdmin):
     list_display = ("subject", "lesson_type", "format", "semester",
@@ -94,6 +120,8 @@ class ScheduledClassAdmin(admin.ModelAdmin):
     list_display = ("event", "slot", "room", "run")
     list_filter = ("run", "slot__day_of_week")
 
+
+# ---------------- Журнал генерации ----------------
 
 @admin.register(GenerationRun)
 class GenerationRunAdmin(admin.ModelAdmin):
