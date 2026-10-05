@@ -9,11 +9,11 @@ from datetime import date, time
 from django.core.management.base import BaseCommand
 from django.db import transaction
 
-from mospolytech_schedule_backend.schedule_generator.enums import (
+from schedule_generator.enums import (
     Format,
     LessonType,
 )
-from mospolytech_schedule_backend.schedule_generator.models import (
+from schedule_generator.models import (
     Group,
     LectureStream,
     LessonEvent,
@@ -27,7 +27,7 @@ from mospolytech_schedule_backend.schedule_generator.models import (
     TimeSlot,
     WeekPattern,
 )
-from mospolytech_schedule_backend.schedule_generator.views import GenerateView
+from schedule_generator.views import GenerateView
 
 
 class Command(BaseCommand):
@@ -49,7 +49,7 @@ class Command(BaseCommand):
             seed=opts["seed"],
             clear_previous=True,
         )
-        from mospolytech_schedule_backend.schedule_generator.models import (
+        from schedule_generator.models import (
             GenerationRun,
         )
         run = GenerationRun.objects.get(pk=result["run_id"])

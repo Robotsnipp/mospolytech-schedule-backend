@@ -44,7 +44,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'drf_spectacular',
     'django_extensions',
-    'mospolytech_schedule_backend.schedule_generator',
+    'schedule_generator',
 ]
 
 MIDDLEWARE = [
