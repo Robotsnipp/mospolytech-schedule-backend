@@ -11,6 +11,7 @@ class Group(models.Model):
         "schedule_generator.Semester", on_delete=models.CASCADE, related_name="groups",
         verbose_name="Семестр", null=True, blank=True,
     )
+    curriculum = models.ForeignKey("schedule_generator.Curriculum", on_delete=models.PROTECT, null=True, blank=True, related_name="groups", verbose_name="Учебный план")
     is_first_year_first_semester = models.BooleanField(
         "Перваки, первый семестр",
         default=False,

@@ -9,6 +9,8 @@
 WeekPattern и повторяется из недели в неделю.
 """
 
+from django.core.exceptions import ValidationError
+from django.core.validators import MinValueValidator
 from django.db import models
 
 
@@ -70,3 +72,29 @@ class TimeSlot(models.Model):
 
     def __str__(self):
         return f"{self.get_day_of_week_display()} {self.lesson_number}-я пара"
+
+
+class Module(models.Model):
+    """Календарный модуль. Не является номером семестра в учебном плане."""
+    semester = models.ForeignKey(Semester, on_delete=models.CASCADE, related_name="modules")
+    number = models.PositiveSmallIntegerField("Номер", validators=[MinValueValidator(1)])
+    start_date = models.DateField("Начало")
+    end_date = models.DateField("Конец")
+    teaching_weeks = models.PositiveSmallIntegerField("Учебных недель", validators=[MinValueValidator(1)])
+
+    class Meta:
+        verbose_name = "Модуль"
+        verbose_name_plural = "Модули"
+        constraints = [
+            models.UniqueConstraint(fields=["semester", "number"], name="uniq_semester_module"),
+            models.CheckConstraint(condition=models.Q(end_date__gte=models.F("start_date")), name="module_dates_order"),
+            models.CheckConstraint(condition=models.Q(teaching_weeks__gte=1), name="module_positive_weeks"),
+        ]
+
+    def clean(self):
+        super().clean()
+        if self.semester_id and self.start_date and self.start_date < self.semester.start_date:
+            raise ValidationError({"start_date": "Модуль начинается раньше семестра."})
+
+    def __str__(self):
+        return f"{self.semester}: модуль {self.number}"

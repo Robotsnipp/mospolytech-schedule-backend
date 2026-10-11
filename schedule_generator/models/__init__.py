@@ -20,14 +20,16 @@
 - бизнес-логика генерации живёт в services/, HTTP — в api/.
 """
 
-from .calendar import Semester, TimeSlot, WeekPattern
+from .calendar import Module, Semester, TimeSlot, WeekPattern
+from .curriculum import Curriculum, CurriculumEntry, StudyForm
 from .generation import GenerationIssue, GenerationRun
 from .lessons import LessonEvent, ScheduledClass
 from .people import Group, Student, Teacher
 from .projects import Project, ProjectEnrollment
-from .resources import LectureStream, Room, Subject
+from .resources import Building, Campus, LectureStream, Room, Subject
 
 __all__ = [
+    "Module", "Curriculum", "CurriculumEntry", "StudyForm", "Campus", "Building",
     "GenerationIssue",
     "GenerationRun",
     "Group",

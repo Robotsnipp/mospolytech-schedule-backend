@@ -6,13 +6,14 @@
 
 from rest_framework import serializers
 
-from ..models import GenerationRun, ScheduledClass, Semester, WeekPattern
+from ..models import GenerationRun, ScheduledClass, Semester, WeekPattern, Module
 
 
 class GenerateRequestSerializer(serializers.Serializer):
     """Параметры запуска генерации недельного шаблона расписания."""
 
     semester = serializers.PrimaryKeyRelatedField(queryset=Semester.objects.all())
+    module = serializers.PrimaryKeyRelatedField(queryset=Module.objects.all(), required=False, allow_null=True)
     week_pattern = serializers.PrimaryKeyRelatedField(
         queryset=WeekPattern.objects.all(), required=False, allow_null=True,
         help_text="Шаблон недели; по умолчанию — первый паттерн семестра.",
@@ -22,7 +23,7 @@ class GenerateRequestSerializer(serializers.Serializer):
     seed = serializers.IntegerField(required=False, default=17)
     clear_previous = serializers.BooleanField(
         required=False, default=True,
-        help_text="Удалить пары предыдущих запусков этого семестра перед записью новых.",
+        help_text="Заменить пары этого периода только при полном успешном результате.",
     )
 
     def validate(self, attrs):
@@ -32,6 +33,9 @@ class GenerateRequestSerializer(serializers.Serializer):
             raise serializers.ValidationError(
                 {"week_pattern": "Шаблон недели относится к другому семестру."}
             )
+        module = attrs.get("module")
+        if module is not None and module.semester_id != semester.id:
+            raise serializers.ValidationError({"module": "Модуль относится к другому семестру."})
         return attrs
 
 
@@ -47,5 +51,5 @@ class GenerationRunSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = GenerationRun
-        fields = ["id", "semester", "created_at", "status", "objective_value",
+        fields = ["id", "semester", "module", "created_at", "status", "objective_value",
                   "solve_time_seconds", "message", "scheduled_classes", "issues"]

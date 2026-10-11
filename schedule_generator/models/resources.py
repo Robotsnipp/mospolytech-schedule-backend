@@ -14,11 +14,34 @@ class Subject(models.Model):
         return self.name
 
 
+class Campus(models.Model):
+    name = models.CharField("Название площадки", max_length=100, unique=True)
+    address = models.CharField("Адрес", max_length=250, blank=True)
+
+    def __str__(self):
+        return self.name
+
+
+class Building(models.Model):
+    campus = models.ForeignKey(Campus, on_delete=models.PROTECT, related_name="buildings")
+    name = models.CharField("Корпус", max_length=100)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["campus", "name"], name="uniq_campus_building")]
+
+    def __str__(self):
+        return f"{self.campus}: {self.name}"
+
+
 class Room(models.Model):
     """Аудитория. capacity ограничивает только очные занятия;
     онлайн-занятия (лекции, часть внеучебки) проходят без аудитории."""
 
     name = models.CharField("Название", max_length=50, unique=True)
+    building = models.ForeignKey(Building, on_delete=models.PROTECT, null=True, blank=True, related_name="rooms")
+    is_active = models.BooleanField("Доступна для генерации", default=True)
+    room_type = models.CharField("Тип помещения", max_length=50, blank=True)
+    equipment = models.TextField("Оборудование", blank=True)
     capacity = models.PositiveSmallIntegerField("Вместимость", default=30)
     allows_lecture = models.BooleanField("Подходит для лекций", default=True)
 
