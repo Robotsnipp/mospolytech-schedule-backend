@@ -42,6 +42,9 @@ class ProjectEnrollment(models.Model):
         verbose_name = "Выбор проекта"
         verbose_name_plural = "Выборы проектов"
 
+    def __str__(self):
+        return f"{self.student} -> {self.project}"
+
     def clean(self):
         super().clean()
         if (self.student_id and self.project_id
@@ -50,6 +53,3 @@ class ProjectEnrollment(models.Model):
             raise ValidationError(
                 "Первокурсники в первом семестре не выбирают проект по ПД."
             )
-
-    def __str__(self):
-        return f"{self.student} -> {self.project}"

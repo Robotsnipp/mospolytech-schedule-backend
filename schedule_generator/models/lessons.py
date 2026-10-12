@@ -32,7 +32,8 @@ class LessonEvent(models.Model):
     subject = models.ForeignKey("schedule_generator.Subject", on_delete=models.CASCADE,
                                 related_name="events", verbose_name="Дисциплина")
     lesson_type = models.CharField("Тип занятия", max_length=20, choices=LessonType.choices)
-    format = models.CharField(
+    # Legacy NULL values remain supported; normalizing them needs a data migration.
+    format = models.CharField(  # noqa: DJ001
         "Формат", max_length=10, choices=Format.choices, null=True, blank=True,
         help_text="Заполняется только для внеучебки; остальные типы имеют фиксированный формат.",
     )
@@ -55,6 +56,10 @@ class LessonEvent(models.Model):
     class Meta:
         verbose_name = "Занятие (план)"
         verbose_name_plural = "Занятия (план)"
+
+    def __str__(self):
+        holder = self.group or self.stream or self.project
+        return f"{self.subject} [{self.get_lesson_type_display()}] — {holder}"
 
     def clean(self):
         super().clean()
@@ -94,9 +99,6 @@ class LessonEvent(models.Model):
         if errors:
             raise ValidationError(errors)
 
-    def __str__(self):
-        holder = self.group or self.stream or self.project
-        return f"{self.subject} [{self.get_lesson_type_display()}] — {holder}"
 
     @property
     def effective_format(self) -> str:

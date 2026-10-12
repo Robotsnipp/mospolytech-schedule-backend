@@ -44,7 +44,8 @@ SECRET_KEY=local-test-only DB_ENGINE=sqlite python manage.py generate_demo_sched
 ## Линты и GitHub Actions
 
 `.github/workflows/checks.yml` запускается на PR и push в `main`:
-базовые ошибки Python и неиспользуемые импорты (Ruff), проверки Django,
+ошибки Python, импорты, современный синтаксис, потенциальные баги,
+упрощения и соглашения Django (Ruff), проверки Django,
 актуальность и применение миграций, тесты и демо-генерация. Для CI используется
 Python 3.12; зависимости устанавливаются через `uv sync --locked --no-install-project`
 из `uv.lock`. Форматирование и проверка типов пока не включены.

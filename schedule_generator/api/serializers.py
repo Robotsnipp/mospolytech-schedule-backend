@@ -6,7 +6,7 @@
 
 from rest_framework import serializers
 
-from ..models import GenerationRun, ScheduledClass, Semester, WeekPattern, Module
+from ..models import GenerationRun, Module, ScheduledClass, Semester, WeekPattern
 
 
 class GenerateRequestSerializer(serializers.Serializer):

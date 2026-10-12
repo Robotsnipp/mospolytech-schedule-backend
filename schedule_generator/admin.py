@@ -15,12 +15,12 @@ from .models import (
     Campus,
     Curriculum,
     CurriculumEntry,
-    Module,
     GenerationIssue,
     GenerationRun,
     Group,
     LectureStream,
     LessonEvent,
+    Module,
     Project,
     ProjectEnrollment,
     Room,
@@ -32,7 +32,6 @@ from .models import (
     TimeSlot,
     WeekPattern,
 )
-
 
 # ---------------- Календарь ----------------
 
