@@ -46,13 +46,13 @@ SECRET_KEY=local-test-only DB_ENGINE=sqlite python manage.py generate_demo_sched
 `.github/workflows/checks.yml` запускается на PR и push в `main`:
 базовые ошибки Python и неиспользуемые импорты (Ruff), проверки Django,
 актуальность и применение миграций, тесты и демо-генерация. Для CI используется
-Python 3.12. Форматирование и проверка типов пока не включены.
+Python 3.12; зависимости устанавливаются через `uv sync --locked --no-install-project`
+из `uv.lock`. Форматирование и проверка типов пока не включены.
 
 Локальный линт:
 
 ```sh
-python -m pip install ruff==0.17.0
-ruff check .
+uvx ruff==0.17.0 check .
 ```
 
 Для локального запрета прямого push в `main` после клонирования:
