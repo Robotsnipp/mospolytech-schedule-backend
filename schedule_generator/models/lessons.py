@@ -47,6 +47,8 @@ class LessonEvent(models.Model):
     teacher = models.ForeignKey("schedule_generator.Teacher", on_delete=models.SET_NULL,
                                 null=True, blank=True,
                                 related_name="events", verbose_name="Преподаватель")
+    module = models.ForeignKey("schedule_generator.Module", on_delete=models.PROTECT, null=True, blank=True, related_name="events")
+    curriculum_entry = models.ForeignKey("schedule_generator.CurriculumEntry", on_delete=models.PROTECT, null=True, blank=True, related_name="events")
     pairs_per_week = models.PositiveSmallIntegerField("Пар в неделю", default=1)
     audience_size = models.PositiveSmallIntegerField("Слушателей", default=25)
 
@@ -57,6 +59,13 @@ class LessonEvent(models.Model):
     def clean(self):
         super().clean()
         errors = {}
+        if self.module_id and self.module.semester_id != self.semester_id:
+            errors["module"] = "Модуль относится к другому семестру."
+        if self.curriculum_entry_id:
+            if self.curriculum_entry.subject_id != self.subject_id:
+                errors["curriculum_entry"] = "Предмет не совпадает со строкой плана."
+            if self.group_id and self.group.curriculum_id != self.curriculum_entry.curriculum_id:
+                errors["curriculum_entry"] = "Строка относится к другому учебному плану группы."
         holders = [self.group_id, self.stream_id, self.project_id]
         if sum(1 for h in holders if h) != 1:
             errors["holder"] = (
@@ -112,7 +121,7 @@ class ScheduledClass(models.Model):
         verbose_name = "Пара в расписании"
         verbose_name_plural = "Пары в расписании"
         constraints = [
-            models.UniqueConstraint(fields=["event", "slot"], name="uniq_event_slot"),
+            models.UniqueConstraint(fields=["run", "event", "slot"], name="uniq_run_event_slot"),
         ]
 
     def __str__(self):

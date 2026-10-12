@@ -28,8 +28,8 @@ def persist_result(*, run, generation_result: GenerationResult, slots, rooms, ev
     slot_by_id = {slot.id: slot for slot in slots}
     known_room_ids = {room.id for room in rooms}
 
-    if clear_previous:
-        ScheduledClass.objects.filter(run__semester=run.semester).delete()
+    if clear_previous and generation_result.status == "SOLVED" and not skipped:
+        ScheduledClass.objects.filter(run__semester=run.semester, run__module=run.module).delete()
 
     ScheduledClass.objects.bulk_create([
         ScheduledClass(

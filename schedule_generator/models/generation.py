@@ -16,6 +16,7 @@ class GenerationRun(models.Model):
 
     semester = models.ForeignKey("schedule_generator.Semester", on_delete=models.CASCADE,
                                  related_name="runs", verbose_name="Семестр")
+    module = models.ForeignKey("schedule_generator.Module", on_delete=models.PROTECT, null=True, blank=True, related_name="runs")
     created_at = models.DateTimeField("Создан", auto_now_add=True)
     status = models.CharField("Статус", max_length=20, choices=STATUS_CHOICES, default="PENDING")
     objective_value = models.IntegerField("Значение целевой функции", null=True, blank=True)

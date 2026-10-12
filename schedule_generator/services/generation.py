@@ -46,14 +46,20 @@ def load_teacher_limits() -> dict[int, dict]:
 
 
 def run_generation(*, semester, week_pattern=None, time_limit_seconds=30,
-                   seed=17, clear_previous=True) -> RunOutcome:
+                   seed=17, clear_previous=True, module=None) -> RunOutcome:
     """Запускает полный цикл генерации недельного шаблона расписания.
 
     :return: RunOutcome с id созданного GenerationRun и сводкой.
     :raises GenerationError: если семестру нечем строить расписание
         (нет WeekPattern) — run остаётся в статусе ERROR с сообщением.
     """
-    run = GenerationRun.objects.create(semester=semester, status="PENDING")
+    if module is not None and module.semester_id != semester.id:
+        raise GenerationError("Модуль относится к другому семестру.")
+    if week_pattern is not None and week_pattern.semester_id != semester.id:
+        raise GenerationError("Шаблон недели относится к другому семестру.")
+    if module is None and LessonEvent.objects.filter(semester=semester, module__isnull=False).exists():
+        raise GenerationError("Для занятий по модулям выберите модуль генерации.")
+    run = GenerationRun.objects.create(semester=semester, module=module, status="PENDING")
     try:
         # --- 2. шаблон недели ---
         if week_pattern is None:
@@ -67,8 +73,11 @@ def run_generation(*, semester, week_pattern=None, time_limit_seconds=30,
         # --- 3. данные ---
         slots = list(TimeSlot.objects.filter(week_pattern=week_pattern)
                      .order_by("day_of_week", "lesson_number"))
-        rooms = list(Room.objects.all())
+        rooms = list(Room.objects.filter(is_active=True))
         events = LessonEvent.objects.filter(semester=semester)
+        if module is not None:
+            from django.db.models import Q
+            events = events.filter(Q(module=module) | Q(module__isnull=True))
 
         # --- 4. подготовка событий ---
         specs, skipped = build_event_specs(events)

@@ -57,7 +57,7 @@ class TimeSlotAdmin(admin.ModelAdmin):
 
 @admin.register(Group)
 class GroupAdmin(admin.ModelAdmin):
-    list_display = ("name", "semester", "is_first_year_first_semester")
+    list_display = ("name", "curriculum", "semester", "is_first_year_first_semester")
     search_fields = ("name",)
 
 
@@ -96,7 +96,7 @@ class SubjectAdmin(admin.ModelAdmin):
 
 @admin.register(Room)
 class RoomAdmin(admin.ModelAdmin):
-    list_display = ("name", "capacity", "allows_lecture")
+    list_display = ("name", "building", "capacity", "room_type", "is_active")
 
 
 @admin.register(LectureStream)
@@ -134,3 +134,28 @@ class GenerationRunAdmin(admin.ModelAdmin):
 class GenerationIssueAdmin(admin.ModelAdmin):
     list_display = ("run", "level", "event", "text")
     list_filter = ("level",)
+
+
+from .models import Building, Campus, Curriculum, CurriculumEntry, Module
+
+
+class CurriculumEntryInline(admin.TabularInline):
+    model = CurriculumEntry
+    extra = 0
+
+
+@admin.register(Curriculum)
+class CurriculumAdmin(admin.ModelAdmin):
+    list_display = ("name", "admission_year", "study_form", "version")
+    list_filter = ("study_form", "admission_year")
+    inlines = [CurriculumEntryInline]
+
+
+@admin.register(Module)
+class ModuleAdmin(admin.ModelAdmin):
+    list_display = ("semester", "number", "start_date", "end_date", "teaching_weeks")
+
+
+admin.site.register(CurriculumEntry)
+admin.site.register(Campus)
+admin.site.register(Building)
