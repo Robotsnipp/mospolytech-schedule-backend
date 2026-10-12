@@ -1,0 +1,11 @@
+#!/bin/sh
+# Git passes the destination ref even when the local branch has another name.
+while read -r local_ref local_oid remote_ref remote_oid; do
+    case "$remote_ref" in
+        refs/heads/main)
+            echo "Push в main запрещён. Отправьте рабочую ветку и создайте PR." >&2
+            exit 1
+            ;;
+    esac
+done
+exit 0

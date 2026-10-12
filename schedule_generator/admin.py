@@ -11,6 +11,11 @@
 from django.contrib import admin
 
 from .models import (
+    Building,
+    Campus,
+    Curriculum,
+    CurriculumEntry,
+    Module,
     GenerationIssue,
     GenerationRun,
     Group,
@@ -136,7 +141,6 @@ class GenerationIssueAdmin(admin.ModelAdmin):
     list_filter = ("level",)
 
 
-from .models import Building, Campus, Curriculum, CurriculumEntry, Module
 
 
 class CurriculumEntryInline(admin.TabularInline):
