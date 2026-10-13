@@ -10,6 +10,7 @@
 - GET  /api/schedule/runs/<id>/  — посмотреть результат запуска.
 """
 
+from drf_spectacular.utils import extend_schema
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -37,7 +38,10 @@ class GenerateViewSet(viewsets.ViewSet):
     """
 
     permission_classes: list = []
-
+    @extend_schema(
+        request=GenerateRequestSerializer,
+        responses={status.HTTP_201_CREATED: GenerationRunSerializer}
+    )
     @action(detail=False, methods=["post"], url_path="generate")
     def generate(self, request):
         serializer = GenerateRequestSerializer(data=request.data)
