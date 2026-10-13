@@ -11,11 +11,16 @@
 from django.contrib import admin
 
 from .models import (
+    Building,
+    Campus,
+    Curriculum,
+    CurriculumEntry,
     GenerationIssue,
     GenerationRun,
     Group,
     LectureStream,
     LessonEvent,
+    Module,
     Project,
     ProjectEnrollment,
     Room,
@@ -27,7 +32,6 @@ from .models import (
     TimeSlot,
     WeekPattern,
 )
-
 
 # ---------------- Календарь ----------------
 
@@ -136,7 +140,6 @@ class GenerationIssueAdmin(admin.ModelAdmin):
     list_filter = ("level",)
 
 
-from .models import Building, Campus, Curriculum, CurriculumEntry, Module
 
 
 class CurriculumEntryInline(admin.TabularInline):

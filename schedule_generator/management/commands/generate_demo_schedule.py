@@ -132,7 +132,7 @@ class Command(BaseCommand):
         )
 
         # ---- очные практики/лаборатории на каждую группу ----
-        for group_name, group in groups.items():
+        for group in groups.values():
             LessonEvent.objects.get_or_create(
                 semester=semester, subject=subjects["Базы данных"],
                 lesson_type=LessonType.LAB, group=group,

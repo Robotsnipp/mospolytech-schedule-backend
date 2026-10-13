@@ -17,7 +17,12 @@ from __future__ import annotations
 from ortools.sat.python import cp_model
 
 from ..enums import LessonType
-from .config import LECTURE_REWARD, PENALTY_TEACHER_OVERLOAD, PENALTY_WINDOW, REWARD_PLACED
+from .config import (
+    LECTURE_REWARD,
+    PENALTY_TEACHER_OVERLOAD,
+    PENALTY_WINDOW,
+    REWARD_PLACED,
+)
 from .dto import EventSpec
 
 

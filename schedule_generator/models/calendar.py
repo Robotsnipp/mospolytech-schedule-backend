@@ -91,10 +91,10 @@ class Module(models.Model):
             models.CheckConstraint(condition=models.Q(teaching_weeks__gte=1), name="module_positive_weeks"),
         ]
 
+    def __str__(self):
+        return f"{self.semester}: модуль {self.number}"
+
     def clean(self):
         super().clean()
         if self.semester_id and self.start_date and self.start_date < self.semester.start_date:
             raise ValidationError({"start_date": "Модуль начинается раньше семестра."})
-
-    def __str__(self):
-        return f"{self.semester}: модуль {self.number}"

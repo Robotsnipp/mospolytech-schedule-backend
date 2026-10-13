@@ -1,10 +1,25 @@
 from datetime import date
+
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.test import TestCase
+
 from schedule_generator.api.serializers import GenerateRequestSerializer
 from schedule_generator.enums import LessonType
-from schedule_generator.models import (Curriculum, CurriculumEntry, GenerationRun, Group, LessonEvent, Module, Room, ScheduledClass, Semester, Subject, TimeSlot, WeekPattern)
+from schedule_generator.models import (
+    Curriculum,
+    CurriculumEntry,
+    GenerationRun,
+    Group,
+    LessonEvent,
+    Module,
+    Room,
+    ScheduledClass,
+    Semester,
+    Subject,
+    TimeSlot,
+    WeekPattern,
+)
 from schedule_generator.services.generation import GenerationError, run_generation
 
 

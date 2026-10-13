@@ -1,0 +1,49 @@
+name: Checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+env:
+  UV_PYTHON: "3.12"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: checks-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@v6
+      - run: uvx ruff==0.17.0 check .
+
+  django:
+    name: Django checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SECRET_KEY: ci-test-only
+      DB_ENGINE: sqlite
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --locked --no-install-project
+      - run: uv run --no-sync python manage.py check
+      - run: uv run --no-sync python manage.py makemigrations --check --dry-run
+      - run: uv run --no-sync python manage.py migrate --noinput
+      - run: uv run --no-sync python manage.py test schedule_generator
+      - run: uv run --no-sync python manage.py generate_demo_schedule --time-limit 3
