@@ -1,25 +1,29 @@
-"""HTTP-представление фичи «генерация расписания».
+"""HTTP-представление фичи «генерация расписания» (DRF ViewSets).
 
 Здесь ТОЛЬКО протокол: разбор/валидация запроса -> вызов сервисного слоя
 (services/generation.run_generation) -> сериализация ответа. Никакой
 бизнес-логики и работы с решателем — всё это видно в services/.
 
-Эндпоинты (см. urls.py):
+Эндпоинты (см. urls.py, маршрутизация через DefaultRouter):
 - POST /api/schedule/generate/   — запустить генерацию, вернуть GenerationRun;
+- GET  /api/schedule/runs/       — список запусков генерации;
 - GET  /api/schedule/runs/<id>/  — посмотреть результат запуска.
 """
 
-from rest_framework import status
+from drf_spectacular.utils import extend_schema
+from rest_framework import status, viewsets
+from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework.views import APIView
 
 from ..models import GenerationRun
 from ..services import GenerationError, run_generation
 from .serializers import GenerateRequestSerializer, GenerationRunSerializer
 
 
-class GenerateView(APIView):
-    """POST /api/schedule/generate/ — запуск генерации расписания (OR-Tools CP-SAT).
+class GenerateViewSet(viewsets.ViewSet):
+    """Запуск генерации расписания (OR-Tools CP-SAT).
+
+    POST /api/schedule/generate/ (action generate, см. url_path ниже).
 
     Что происходит внутри (детали — в services/generation.py):
     1. Берутся все LessonEvent семестра; физкультура (PE) исключается —
@@ -34,8 +38,12 @@ class GenerateView(APIView):
     """
 
     permission_classes: list = []
-
-    def post(self, request):
+    @extend_schema(
+        request=GenerateRequestSerializer,
+        responses={status.HTTP_201_CREATED: GenerationRunSerializer}
+    )
+    @action(detail=False, methods=["post"], url_path="generate")
+    def generate(self, request):
         serializer = GenerateRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         try:
@@ -48,14 +56,9 @@ class GenerateView(APIView):
                         status=status.HTTP_201_CREATED)
 
 
-class ScheduleRunDetailView(APIView):
-    """GET /api/schedule/runs/<id>/ — результат запуска генерации."""
+class GenerationRunViewSet(viewsets.ReadOnlyModelViewSet):
+    """Запуски генерации: GET /api/schedule/runs/ и GET /api/schedule/runs/<id>/."""
 
+    queryset = GenerationRun.objects.all()
+    serializer_class = GenerationRunSerializer
     permission_classes: list = []
-
-    def get(self, request, pk: int):
-        run = GenerationRun.objects.filter(pk=pk).first()
-        if run is None:
-            return Response({"detail": "Запуск не найден."},
-                            status=status.HTTP_404_NOT_FOUND)
-        return Response(GenerationRunSerializer(run).data)
