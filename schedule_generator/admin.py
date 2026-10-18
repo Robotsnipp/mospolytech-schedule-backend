@@ -61,7 +61,8 @@ class TimeSlotAdmin(admin.ModelAdmin):
 
 @admin.register(Group)
 class GroupAdmin(admin.ModelAdmin):
-    list_display = ("name", "curriculum", "semester", "is_first_year_first_semester")
+    list_display = ("name", "curriculum", "semester", "is_first_year_first_semester", "is_dpo")
+    list_filter = ("is_dpo",)
     search_fields = ("name",)
 
 

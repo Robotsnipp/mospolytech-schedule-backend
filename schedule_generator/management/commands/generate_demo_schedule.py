@@ -95,27 +95,31 @@ class Command(BaseCommand):
             teachers[teacher_index], _ = Teacher.objects.get_or_create(
                 full_name=f"Преподаватель {teacher_index}")
 
-        # ---- группы: две обычные и одна «перваки, первый семестр» ----
+        # ---- группы: две обычные, одна «перваки, первый семестр» и группа ДПО ----
         groups = {}
-        for group_name, is_first_year_first_semester in [
-            ("ИВМ-81", False), ("БИСО-82", False), ("ПИ-21", True),
+        for group_name, is_first_year_first_semester, is_dpo in [
+            ("ИВМ-81", False, False), ("БИСО-82", False, False), ("ПИ-21", True, False),
+            ("ДПО-1", False, True),
         ]:
             group, _ = Group.objects.get_or_create(
                 name=group_name,
                 defaults={"semester": semester,
-                          "is_first_year_first_semester": is_first_year_first_semester},
+                          "is_first_year_first_semester": is_first_year_first_semester,
+                          "is_dpo": is_dpo},
             )
             groups[group_name] = group
             if not group.students.exists():
+                student_count = 15 if is_dpo else 25
                 Student.objects.bulk_create([
-                    Student(group=group, full_name=f"{group_name} Студент {student_index}")
-                    for student_index in range(1, 26)
+                    Student(group=group, full_name=f"{group_name} Слушатель {student_index}")
+                    for student_index in range(1, student_count + 1)
                 ])
 
         # ---- дисциплины ----
         subjects = {}
         for subject_name in ["Алгоритмы", "Базы данных", "Матанализ", "Физ-ра",
-                             "Веб-разработка", "Клуб робототехники"]:
+                             "Веб-разработка", "Клуб робототехники",
+                             "Программирование на Python"]:
             subjects[subject_name], _ = Subject.objects.get_or_create(name=subject_name)
 
         # ---- лекции онлайн на поток из нескольких групп ----
@@ -183,6 +187,21 @@ class Command(BaseCommand):
             lesson_type=LessonType.EXTRACURRICULAR,
             group=groups["БИСО-82"], format=Format.ONLINE,
             defaults={"teacher": teachers[5], "pairs_per_week": 1, "audience_size": 25},
+        )
+
+        # ---- ДПО: отдельная группа на каждое ДПО; пары онлайн или очно ----
+        dpo_group = groups["ДПО-1"]
+        LessonEvent.objects.get_or_create(
+            semester=semester, subject=subjects["Программирование на Python"],
+            lesson_type=LessonType.DPO, group=dpo_group, format=Format.ONLINE,
+            defaults={"teacher": teachers[6], "pairs_per_week": 1,
+                      "audience_size": dpo_group.students.count()},
+        )
+        LessonEvent.objects.get_or_create(
+            semester=semester, subject=subjects["Программирование на Python"],
+            lesson_type=LessonType.DPO, group=dpo_group, format=Format.ONSITE,
+            defaults={"teacher": teachers[6], "pairs_per_week": 1,
+                      "audience_size": dpo_group.students.count()},
         )
 
         return semester

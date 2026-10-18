@@ -21,7 +21,8 @@ class LessonEvent(models.Model):
     """Единица планирования: сколько пар какого типа нужно провести.
 
     Носитель занятия — одно из:
-      - group   (практика/лаборатория/внеучебка на группу),
+      - group   (практика/лаборатория/внеучебка/ДПО на учебную группу
+                 или группу ДПО),
       - stream  (лекция на поток групп),
       - project (ПД на выбранную группу студентов).
     Физкультура (PE) тоже может храниться здесь, но генератор её пропускает.
@@ -35,7 +36,8 @@ class LessonEvent(models.Model):
     # Legacy NULL values remain supported; normalizing them needs a data migration.
     format = models.CharField(  # noqa: DJ001
         "Формат", max_length=10, choices=Format.choices, null=True, blank=True,
-        help_text="Заполняется только для внеучебки; остальные типы имеют фиксированный формат.",
+        help_text="Заполняется только для внеучебки и ДПО; "
+                  "остальные типы имеют фиксированный формат.",
     )
     group = models.ForeignKey("schedule_generator.Group", on_delete=models.CASCADE, null=True, blank=True,
                               related_name="events", verbose_name="Группа")
@@ -83,6 +85,19 @@ class LessonEvent(models.Model):
             errors["project"] = "Пара ПД должна быть привязана к проекту."
         if self.lesson_type in (LessonType.PRACTICE, LessonType.LAB) and not self.group_id:
             errors["group"] = "Практика/лаборатория планируются на учебную группу."
+        # ДПО: пары планируются на отдельную группу ДПО; формат — очный или
+        # онлайн — задаётся данными события (как у внеучебки).
+        if self.lesson_type == LessonType.DPO:
+            if not self.group_id:
+                errors["group"] = "Пара ДПО должна быть привязана к группе ДПО."
+            elif not self.group.is_dpo:
+                errors["group"] = "Занятие ДПО должно относиться к группе ДПО."
+        if self.group_id and self.group.is_dpo \
+                and self.lesson_type not in (LessonType.DPO, LessonType.EXTRACURRICULAR):
+            errors["group"] = (
+                "На группу ДПО можно планировать только занятия ДПО"
+                " или внеучебку."
+            )
         # Формат у жёстких типов фиксирован — не даём задать противоречивое значение.
         if self.lesson_type in DEFAULT_FORMAT_BY_TYPE and self.format:
             expected = DEFAULT_FORMAT_BY_TYPE[self.lesson_type]
@@ -93,7 +108,7 @@ class LessonEvent(models.Model):
                 )
         if self.lesson_type not in DEFAULT_FORMAT_BY_TYPE and self.format == Format.ONLINE \
                 and not self.group_id and not self.project_id:
-            errors["format"] = "Онлайн-внеучебка должна быть привязана к группе."
+            errors["format"] = "Онлайн-занятие должно быть привязано к группе."
         if self.pairs_per_week is not None and self.pairs_per_week < 0:
             errors["pairs_per_week"] = "Не может быть отрицательным."
         if errors:

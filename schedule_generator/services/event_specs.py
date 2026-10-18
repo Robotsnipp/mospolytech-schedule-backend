@@ -9,6 +9,8 @@
 - LECTURE  — носитель stream: блокируются ВСЕ группы потока, аудитория не нужна;
 - PD       — носитель project: блокируются только студенты, выбравшие проект
              (остальные студенты их учебных групп свободны в этот слот);
+- DPO      — носитель group (группа ДПО создаётся отдельно для каждого ДПО):
+             блокируется группа ДПО; формат очный/онлайн задаётся данными;
 - остальные— носитель group: блокируется одна учебная группа.
 Физкультура (PE) исключается из генерации полностью (NON_GENERATED_LESSON_TYPES).
 """
@@ -67,8 +69,10 @@ def build_event_specs(events) -> tuple[list[EventSpec], list[tuple]]:
                 skipped.append((event, "По проекту нет выбравших его студентов."))
                 continue
         elif event.group_id:
+            # Обычные группы, группы ДПО и внеучебка: занятие блокирует
+            # всю группу-носителя (для ДПО это отдельная группа обучающихся).
             blocking_group_ids = {event.group_id}
-            audience_size = event.audience_size
+            audience_size = event.audience_size or event.group.students.count()
         else:
             skipped.append((event, "У занятия нет носителя (группы/потока/проекта)."))
             continue
