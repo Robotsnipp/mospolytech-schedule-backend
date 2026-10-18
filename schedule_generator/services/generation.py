@@ -93,7 +93,7 @@ def run_generation(*, semester, week_pattern=None, time_limit_seconds=30,
         # --- 6. сохранение ---
         persist_result(run=run, generation_result=generation_result,
                        slots=slots, rooms=rooms, events=events,
-                       skipped=skipped, clear_previous=clear_previous)
+                       specs=specs, skipped=skipped, clear_previous=clear_previous)
     except GenerationError:
         raise
     except Exception as exc:  # noqa: BLE001 — фиксируем сбой в истории запусков
