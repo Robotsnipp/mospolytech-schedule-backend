@@ -5,7 +5,7 @@ from django.db import IntegrityError, transaction
 from django.test import TestCase
 
 from schedule_generator.api.serializers import GenerateRequestSerializer
-from schedule_generator.enums import LessonType
+from schedule_generator.enums import Format, LessonType
 from schedule_generator.models import (
     Curriculum,
     CurriculumEntry,
@@ -16,6 +16,7 @@ from schedule_generator.models import (
     Room,
     ScheduledClass,
     Semester,
+    Student,
     Subject,
     TimeSlot,
     WeekPattern,
@@ -93,3 +94,61 @@ class PlanningTests(TestCase):
         event.subject = Subject.objects.create(name='Other subject')
         with self.assertRaises(ValidationError):
             event.full_clean()
+
+    def dpo_event(self, group, lesson_format):
+        return LessonEvent.objects.create(
+            semester=self.semester, subject=self.subject, group=group,
+            lesson_type=LessonType.DPO, format=lesson_format, pairs_per_week=1,
+        )
+
+    def test_dpo_events_require_own_dpo_group(self):
+        """ДПО планируется только на отдельную группу ДПО."""
+        dpo_group = Group.objects.create(name='ДПО-Тест', is_dpo=True)
+        Student.objects.create(group=dpo_group, full_name='Слушатель')
+        self.dpo_event(dpo_group, Format.ONLINE).full_clean()
+        self.dpo_event(dpo_group, Format.ONSITE).full_clean()
+        # обычная учебная группа для ДПО не подходит
+        with self.assertRaises(ValidationError):
+            self.dpo_event(self.group, Format.ONLINE).full_clean()
+        # занятие другого типа на группу ДПО планировать нельзя
+        with self.assertRaises(ValidationError):
+            LessonEvent.objects.create(
+                semester=self.semester, subject=self.subject, group=dpo_group,
+                lesson_type=LessonType.PRACTICE,
+            ).full_clean()
+
+    def test_dpo_generation_online_and_onsite_for_separate_groups(self):
+        """Пары ДПО (онлайн и очные) планируются на отдельные группы ДПО
+        реальным решателем; очная пара занимает аудиторию, онлайн — нет."""
+        first = Group.objects.create(name='ДПО-1', is_dpo=True)
+        second = Group.objects.create(name='ДПО-2', is_dpo=True)
+        online_event = self.dpo_event(first, Format.ONLINE)
+        onsite_event = self.dpo_event(second, Format.ONSITE)
+        result = run_generation(semester=self.semester, time_limit_seconds=2)
+        self.assertEqual(result.status, 'SOLVED')
+        classes = ScheduledClass.objects.filter(run_id=result.run_id)
+        online_classes = [c for c in classes if c.event_id == online_event.id]
+        onsite_classes = [c for c in classes if c.event_id == onsite_event.id]
+        self.assertEqual(len(online_classes), 1)
+        self.assertEqual(len(onsite_classes), 1)
+        self.assertIsNone(online_classes[0].room_id)
+        self.assertEqual(onsite_classes[0].room_id, self.room.id)
+
+    def test_dpo_two_onsite_groups_do_not_share_room_slot(self):
+        """Две очные группы ДПО не могут занять одну аудиторию в одном слоте."""
+        first = Group.objects.create(name='ДПО-1', is_dpo=True)
+        second = Group.objects.create(name='ДПО-2', is_dpo=True)
+        first_event = self.dpo_event(first, Format.ONSITE)
+        second_event = self.dpo_event(second, Format.ONSITE)
+        # вторая аудитория и второй слот: иначе решателю физически негде
+        # поставить вторую очную пару (одна аудитория/один слот -> PARTIAL)
+        Room.objects.create(name='R2', capacity=30)
+        TimeSlot.objects.create(week_pattern=self.pattern, day_of_week=1, lesson_number=1)
+        result = run_generation(semester=self.semester, time_limit_seconds=2)
+        self.assertEqual(result.status, 'SOLVED')
+        classes = ScheduledClass.objects.filter(run_id=result.run_id)
+        first_class = classes.get(event=first_event)
+        second_class = classes.get(event=second_event)
+        # инвариант решателя: в одном слоте аудитория занята не более чем одной парой
+        self.assertFalse(first_class.slot_id == second_class.slot_id
+                         and first_class.room_id == second_class.room_id)

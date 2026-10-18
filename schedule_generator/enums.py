@@ -17,6 +17,11 @@ class LessonType(models.TextChoices):
     - EXTRACURRICULAR — внеучебка: пока мало информации, поэтому поддержка
       заложена с флагом is_online (может быть как очной, так и онлайн)
       и тоже участвует в генерации.
+    - DPO — дополнительное профессиональное образование: те же пары, что у
+      остальных занятий; могут быть онлайн или очно; это могут быть лекции,
+      практики или другие занятия. Для каждого ДПО создаётся отдельная
+      группа обучающихся, поэтому пары планируются на группу ДПО
+      (Group.is_dpo=True). Формат задаётся данными события.
     """
 
     PRACTICE = ("PRACTICE", "Практика")
@@ -25,6 +30,7 @@ class LessonType(models.TextChoices):
     PE = ("PE", "Физкультура")
     PD = ("PD", "Проектная деятельность")
     EXTRACURRICULAR = ("EXTRACURRICULAR", "Внеучебная деятельность")
+    DPO = ("DPO", "ДПО")
 
 
 class Format(models.TextChoices):
@@ -38,7 +44,7 @@ class Format(models.TextChoices):
 NON_GENERATED_LESSON_TYPES = {LessonType.PE}
 
 # Жёсткое соответствие «тип -> формат» для известных типов.
-# Внеучебка может быть любым — выбирается данными (Format на Event).
+# Внеучебка и ДПО могут быть любыми — выбирается данными (Format на Event).
 DEFAULT_FORMAT_BY_TYPE = {
     LessonType.PRACTICE: Format.ONSITE,
     LessonType.LAB: Format.ONSITE,
