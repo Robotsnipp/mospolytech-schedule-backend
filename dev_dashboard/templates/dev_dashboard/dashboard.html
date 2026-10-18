@@ -19,6 +19,22 @@
   pre { background: #f5f5f5; border-radius: 6px; padding: 1rem; overflow: auto; max-height: 400px; font-size: .8rem; }
   details summary { cursor: pointer; margin-bottom: .5rem; }
   table.runs td, table.runs th { border-bottom: 1px solid #eee; padding: .3rem .5rem; text-align: left; font-size: .9rem; }
+  /* Расписание глазами студента */
+  select.run-picker { padding: .3rem .5rem; margin-bottom: 1rem; font-size: .95rem; }
+  .student-card { border: 1px solid #ddd; border-radius: 8px; padding: 1rem; margin-bottom: 1.5rem; }
+  .student-card h3 { margin: 0 0 .2rem; font-size: 1.05rem; }
+  .student-card .meta { color: #555; font-size: .85rem; margin-bottom: .6rem; }
+  .student-card .pe-note { color: #8a6d3b; font-size: .8rem; margin-top: .4rem; }
+  table.weekgrid { border-collapse: collapse; width: 100%; table-layout: fixed; }
+  table.weekgrid th, table.weekgrid td { border: 1px solid #e0e0e0; padding: .3rem; vertical-align: top; font-size: .78rem; }
+  table.weekgrid th { background: #fafafa; text-align: center; }
+  td.lesson { background: #e3f2fd; border-radius: 4px; }
+  td.lesson.online { background: #ede7f6; }
+  td.lesson.pd { background: #fff8e1; outline: 2px solid #f9a825; }
+  td.lesson b { display: block; font-size: .82rem; }
+  td.empty { background: #fcfcfc; }
+  .legend { font-size: .8rem; color: #555; margin: .5rem 0 1rem; }
+  .legend span { display: inline-block; padding: .1rem .5rem; border-radius: 4px; margin-right: .5rem; }
 </style>
 </head>
 <body>
@@ -65,6 +81,65 @@
   <tr><td colspan="7">Запусков ещё не было.</td></tr>
   {% endfor %}
 </table>
+
+<h2>Расписание глазами студентов</h2>
+{% if student_run %}
+<form method="get" action="">
+  <label>Запуск:
+    <select class="run-picker" name="run" onchange="this.form.submit()">
+      {% for pk, label in student_runs %}
+      <option value="{{ pk }}" {% if pk == selected_run_id %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+</form>
+<div class="legend">
+  <span style="background:#e3f2fd;">очное занятие</span>
+  <span style="background:#ede7f6;">онлайн (лекция/ДПО)</span>
+  <span style="background:#fff8e1; outline:2px solid #f9a825;">ПД (группа по проекту)</span>
+</div>
+{% for s in student_schedules %}
+<div class="student-card">
+  <h3>{{ s.student.full_name }}</h3>
+  <div class="meta">
+    Группа: <b>{{ s.student.group.name }}{% if s.student.group.is_dpo %} (ДПО){% endif %}</b>
+    · Пар в неделю: {{ s.total_pairs }}
+    · Запуск: Run #{{ student_run.pk }} ({{ student_run.status }})
+  </div>
+  <table class="weekgrid">
+    <tr>
+      <th style="width:4rem;">Пара</th>
+      {% for day in s.day_names %}<th>{{ day }}</th>{% endfor %}
+    </tr>
+    {% for row in s.grid %}
+    <tr>
+      <th>{{ row.lesson }}-я</th>
+      {% for cell in row.cells %}
+        {% if cell %}
+        <td class="lesson{% if cell.lessons.0.is_online %} online{% endif %}{% if cell.lessons.0.highlight %} pd{% endif %}">
+          {% for l in cell.lessons %}
+          <div class="lesson-item{% if not forloop.first %} sep{% endif %}">
+            <b>{{ l.subject }}</b>
+            {{ l.lesson_type_display }} · {{ l.teacher }}
+            {% if l.is_online %}<span class="tag-online">онлайн</span>{% else %}<span class="tag-room">{{ l.room }}</span>{% endif %}
+          </div>
+          {% endfor %}
+        </td>
+        {% else %}
+        <td class="empty"></td>
+        {% endif %}
+      {% endfor %}
+    </tr>
+    {% empty %}
+    <tr><td colspan="{{ s.num_days|add:1 }}">Нет слотов шаблона недели для этого семестра.</td></tr>
+    {% endfor %}
+  </table>
+  {% if s.pe_note %}<div class="pe-note">{{ s.pe_note }}</div>{% endif %}
+</div>
+{% endfor %}
+{% else %}
+<p>Запусков генерации ещё не было — сначала нажмите «Запустить генерацию» выше.</p>
+{% endif %}
 
 <details>
   <summary><h2 style="display:inline">Результат последнего запуска (JSON)</h2></summary>

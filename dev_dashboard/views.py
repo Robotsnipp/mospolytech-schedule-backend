@@ -13,6 +13,12 @@ from schedule_generator.models import GenerationRun, Module, Semester
 from schedule_generator.services import GenerationError, run_generation
 
 from .checks import run_all_checks
+from .student_view import (
+    DAY_NAMES,
+    build_student_schedule,
+    get_latest_run,
+    pick_representative_students,
+)
 
 
 class GenerateForm(forms.Form):
@@ -30,6 +36,28 @@ class GenerateForm(forms.Form):
                                         initial=True, required=False)
 
 
+def _student_schedules_context(run_id: int | None = None):
+    """Расписание глазами разных студентов для последнего (или выбранного) запуска."""
+    run = None
+    if run_id:
+        run = GenerationRun.objects.filter(pk=run_id).first()
+    if run is None:
+        run = get_latest_run()
+    if run is None:
+        return {"student_runs": [], "selected_run_id": None, "student_run": None}
+    students = pick_representative_students(run)
+    schedules = [build_student_schedule(run, s) for s in students]
+    runs = [(r.pk, f"Run #{r.pk} · {r.semester} · {r.status}")
+            for r in GenerationRun.objects.order_by("-created_at")[:10]]
+    return {
+        "day_names": DAY_NAMES,
+        "student_schedules": schedules,
+        "student_run": run,
+        "student_runs": runs,
+        "selected_run_id": run.pk,
+    }
+
+
 def dashboard(request):
     form = GenerateForm(initial={"time_limit": 10, "seed": 17})
     # Подставляем актуальный список семестров/модулей на каждой отрисовке.
@@ -41,7 +69,11 @@ def dashboard(request):
         "form": form,
         "runs": runs,
         "last_run_json": _last_run_dump(),
+        **_student_schedules_context(
+            request.GET.get("run") or request.session.get("dev_last_run_id")),
     }
+    if context["student_run"] is not None:
+        request.session["dev_last_run_id"] = context["student_run"].pk
     return render(request, "dev_dashboard/dashboard.html", context)
 
 
@@ -64,6 +96,7 @@ def generate(request):
                 clear_previous=data["clear_previous"],
             )
             run = GenerationRun.objects.get(pk=outcome.run_id)
+            request.session["dev_last_run_id"] = run.pk
             level = ("success" if run.status == "SOLVED" else "warning")
             messages.add_message(request, getattr(messages, level),
                                  f"Run #{run.pk}: статус {run.status}, "
@@ -78,6 +111,7 @@ def generate(request):
         "form": form,
         "runs": GenerationRun.objects.select_related("semester", "module")[:10],
         "last_run_json": _last_run_dump(),
+        **_student_schedules_context(request.session.get("dev_last_run_id")),
     })
 
 
