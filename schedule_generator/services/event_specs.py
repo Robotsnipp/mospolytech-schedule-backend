@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from ..enums import NON_GENERATED_LESSON_TYPES, LessonType
 from ..models import Student
+from .day_rules import allowed_days_for
 from .dto import EventSpec
 
 
@@ -87,5 +88,7 @@ def build_event_specs(events) -> tuple[list[EventSpec], list[tuple]]:
             blocking_group_ids=blocking_group_ids,
             blocking_student_ids=blocking_student_ids,
             stream_id=stream_id,
+            # правила размещения по дням (ПД — пн/ср, остальное — вт/чт/пт/сб)
+            allowed_days=allowed_days_for(event.lesson_type),
         ))
     return specs, skipped

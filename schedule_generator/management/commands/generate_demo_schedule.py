@@ -1,5 +1,12 @@
 """Демо-данные и запуск генерации расписания (OR-Tools CP-SAT).
 
+Сетка недели соответствует правилам университета:
+- пары идут с понедельника по субботу, 7 пар в день;
+- на проектную деятельность (ПД) выделены пн и ср — в эти дни другие пары
+  не планируются (см. services/day_rules.py);
+- аудитории распределены по нескольким площадкам (кампусам): участник не
+  может оказаться в двух кампусах в одном слоте (см. add_campus_consistency).
+
 Пример:
     uv run python manage.py generate_demo_schedule --time-limit 10
 """
@@ -14,6 +21,8 @@ from schedule_generator.enums import (
     LessonType,
 )
 from schedule_generator.models import (
+    Building,
+    Campus,
     GenerationRun,
     Group,
     LectureStream,
@@ -29,6 +38,20 @@ from schedule_generator.models import (
     WeekPattern,
 )
 from schedule_generator.services import run_generation
+from schedule_generator.services.day_rules import PD_ALLOWED_DAYS
+
+# Реальное расписание пар университета: (номер пары, начало, конец)
+LESSON_TIMES = [
+    (1, time(9, 0), time(10, 30)),
+    (2, time(10, 40), time(12, 10)),
+    (3, time(12, 20), time(13, 50)),
+    (4, time(14, 30), time(16, 0)),
+    (5, time(16, 10), time(17, 40)),
+    (6, time(17, 50), time(19, 20)),
+    (7, time(19, 30), time(21, 0)),
+]
+# Учебные дни: 0=пн ... 5=сб (см. TimeSlot.DAY_CHOICES)
+CLASS_DAYS = range(6)
 
 
 class Command(BaseCommand):
@@ -67,27 +90,41 @@ class Command(BaseCommand):
             name=name, defaults={"start_date": date(2026, 9, 1), "weeks_count": 18},
         )
 
-        # ---- сетка недель: пн-пт, 4 пары ----
+        # ---- сетка недель: пн-сб, 7 пар с реальным временем начала/конца ----
         week_pattern, _ = WeekPattern.objects.get_or_create(
             semester=semester, name="Базовая неделя")
         if not week_pattern.slots.exists():
-            for day_of_week in range(5):
-                for lesson_number in range(1, 5):
+            for day_of_week in CLASS_DAYS:
+                for lesson_number, start_time, end_time in LESSON_TIMES:
                     TimeSlot.objects.create(
                         week_pattern=week_pattern, day_of_week=day_of_week,
                         lesson_number=lesson_number,
-                        start_time=time(9 + 2 * (lesson_number - 1)),
-                        end_time=time(10 + 2 * (lesson_number - 1)),
+                        start_time=start_time, end_time=end_time,
                     )
 
-        # ---- аудитории ----
+        # ---- площадки (кампусы), корпуса и аудитории ----
+        main_campus, _ = Campus.objects.get_or_create(
+            name="Основная площадка", defaults={"address": "приоритетная"})
+        second_campus, _ = Campus.objects.get_or_create(
+            name="Вторая площадка", defaults={"address": "далеко от основной"})
+        main_building, _ = Building.objects.get_or_create(
+            campus=main_campus, name="Корпус А")
+        second_building, _ = Building.objects.get_or_create(
+            campus=second_campus, name="Корпус Б")
+
         rooms = {}
         for room_index in range(1, 11):
             rooms[room_index], _ = Room.objects.get_or_create(
-                name=f"А-{100 + room_index}", defaults={"capacity": 30})
+                name=f"А-{100 + room_index}",
+                defaults={"capacity": 30, "building": main_building})
         for big_room_index in range(1, 3):
             rooms[f"big{big_room_index}"], _ = Room.objects.get_or_create(
-                name=f"Аудитория {300 + big_room_index}", defaults={"capacity": 80})
+                name=f"Аудитория {300 + big_room_index}",
+                defaults={"capacity": 80, "building": main_building})
+        for extra_room_index in range(1, 4):
+            rooms[f"second{extra_room_index}"], _ = Room.objects.get_or_create(
+                name=f"Б-{200 + extra_room_index}",
+                defaults={"capacity": 30, "building": second_building})
 
         # ---- преподаватели ----
         teachers = {}
@@ -126,7 +163,7 @@ class Command(BaseCommand):
         stream, _ = LectureStream.objects.get_or_create(
             semester=semester, subject=subjects["Алгоритмы"], teacher=teachers[1],
         )
-        stream.groups.set(Group.objects.filter(semester=semester))
+        stream.groups.set(Group.objects.filter(semester=semester, is_dpo=False))
         LessonEvent.objects.get_or_create(
             semester=semester, subject=subjects["Алгоритмы"],
             lesson_type=LessonType.LECTURE, stream=stream,
@@ -162,6 +199,7 @@ class Command(BaseCommand):
             )
 
         # ---- ПД: студенты сами выбирают проект; группа ПД = выбравшие ----
+        # Дни ПД фиксированы правилами (services/day_rules.py): пн и ср.
         project, _ = Project.objects.get_or_create(
             semester=semester, title="Веб-портфолио ИТ-кампуса",
             defaults={"supervisor": teachers[4]},
@@ -173,7 +211,8 @@ class Command(BaseCommand):
         LessonEvent.objects.get_or_create(
             semester=semester, subject=subjects["Веб-разработка"],
             lesson_type=LessonType.PD, project=project,
-            defaults={"teacher": teachers[4], "pairs_per_week": 1,
+            defaults={"teacher": teachers[4],
+                      "pairs_per_week": len(PD_ALLOWED_DAYS),
                       "audience_size": project.enrollments.count()},
         )
 
