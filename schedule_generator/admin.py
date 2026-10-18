@@ -102,8 +102,14 @@ class SubjectAdmin(admin.ModelAdmin):
 
 @admin.register(Room)
 class RoomAdmin(admin.ModelAdmin):
-    list_display = ("name", "campus", "building", "capacity", "room_type", "is_active")
-    list_filter = ("campus", "building", "is_active")
+    list_display = ("name", "campus_name", "building", "capacity", "room_type", "is_active")
+    list_filter = ("campus_ptr", "building", "is_active")
+
+    @admin.display(description="Кампус", ordering="campus_ptr__name")
+    def campus_name(self, obj: Room) -> str:
+        """Кампус напрямую либо через корпус (свойство Room.campus)."""
+        campus = obj.campus
+        return campus.name if campus is not None else "—"
 
 
 @admin.register(LectureStream)

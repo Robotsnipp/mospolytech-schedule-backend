@@ -33,6 +33,7 @@
   td.lesson.online { background: #ede7f6; }
   td.lesson.pd { background: #fff8e1; outline: 2px solid #f9a825; }
   td.lesson b { display: block; font-size: .82rem; }
+  .tag-campus { display: inline-block; background: #e8f5e9; color: #1b5e20; border: 1px solid #a5d6a7; border-radius: 4px; padding: 0 .35rem; margin-left: .25rem; font-size: .72rem; white-space: nowrap; }
   td.empty { background: #fcfcfc; }
   .legend { font-size: .8rem; color: #555; margin: .5rem 0 1rem; }
   .legend span { display: inline-block; padding: .1rem .5rem; border-radius: 4px; margin-right: .5rem; }
@@ -188,6 +189,7 @@
             <b>{{ l.subject }}</b>
             {{ l.lesson_type_display }} · {{ l.teacher }}
             {% if l.is_online %}<span class="tag-online">онлайн</span>{% else %}<span class="tag-room">{{ l.room }}</span>{% endif %}
+            {% if l.campus %}<span class="tag-campus" title="Кампус: {{ l.campus }}">📍 {{ l.campus }}</span>{% endif %}
           </div>
           {% endfor %}
         </td>
