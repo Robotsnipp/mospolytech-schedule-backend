@@ -152,3 +152,45 @@ class PlanningTests(TestCase):
         # инвариант решателя: в одном слоте аудитория занята не более чем одной парой
         self.assertFalse(first_class.slot_id == second_class.slot_id
                          and first_class.room_id == second_class.room_id)
+
+
+class ShortageDiagnosticsTests(TestCase):
+    """Объяснения «чего не хватает» при PARTIAL/INFEASIBLE (diagnostics)."""
+
+    def setUp(self):
+        self.semester = Semester.objects.create(name='Diag', start_date=date(2026, 9, 1))
+        self.pattern = WeekPattern.objects.create(semester=self.semester)
+        # обычные пары идут во вт/чт/пт/сб — заведём только вторник
+        self.slot = TimeSlot.objects.create(week_pattern=self.pattern, day_of_week=1, lesson_number=1)
+        self.subject = Subject.objects.create(name='Math')
+        self.group = Group.objects.create(name='G')
+        self.room = Room.objects.create(name='R', capacity=30)
+
+    def test_partial_issue_explains_missing_slots(self):
+        """PARTIAL: в issue попадает число недостающих пар и причина-дефицит."""
+        LessonEvent.objects.create(
+            semester=self.semester, subject=self.subject, group=self.group,
+            lesson_type=LessonType.PRACTICE, pairs_per_week=2)
+        result = run_generation(semester=self.semester, time_limit_seconds=2)
+        self.assertEqual(result.status, 'PARTIAL')
+        run = GenerationRun.objects.get(pk=result.run_id)
+        texts = list(run.issues.values_list('text', flat=True))
+        joined = '\n'.join(texts)
+        self.assertIn('не хватает 1 пару', joined)
+        self.assertIn('не хватает свободных слотов', joined)
+        self.assertTrue(any(t.startswith('Чего не хватает:') for t in texts))
+
+    def test_partial_issue_explains_room_capacity(self):
+        """PARTIAL: очной паре некуда встать — текст про вместимость аудиторий."""
+        self.room.capacity = 10
+        self.room.save()
+        event = LessonEvent.objects.create(
+            semester=self.semester, subject=self.subject, group=self.group,
+            lesson_type=LessonType.PRACTICE, audience_size=50)
+        Student.objects.bulk_create(
+            [Student(group=self.group, full_name=f'S{i}') for i in range(50)])
+        result = run_generation(semester=self.semester, time_limit_seconds=2)
+        self.assertEqual(result.status, 'PARTIAL')
+        run = GenerationRun.objects.get(pk=result.run_id)
+        issue_text = run.issues.filter(event=event).first().text
+        self.assertIn('нет активной аудитории, подходящей по вместимости', issue_text)
