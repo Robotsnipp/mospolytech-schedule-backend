@@ -97,20 +97,20 @@ def add_day_restrictions(model: cp_model.CpModel, specs: list[EventSpec],
                 model.Add(pair_placement_vars[(spec.event_id, slot_id)] == 0)
 
 
-def add_campus_consistency(model: cp_model.CpModel, specs: list[EventSpec],
-                           slot_ids: list[int], pair_placement_vars: dict,
-                           onsite_room_choice_vars: dict,
-                           campus_id_by_room_id: dict[int, int]) -> None:
+def add_location_consistency(model: cp_model.CpModel, specs: list[EventSpec],
+                              slot_ids: list[int], pair_placement_vars: dict,
+                              onsite_room_choice_vars: dict,
+                              location_id_by_room_id: dict[int, int]) -> None:
     """Один участник (группа/студент/преподаватель) не бывает в двух разных
-    учебных площадках (кампусах) в одном слоте: площадки далеко друг от друга.
+    учебных локациях в одном слоте: между корпусами на разных локациях час езды.
 
     Реализация — зеркальные булевы переменные присутствия участника на
-    площадке в слоте:
-        presence(participant, campus, slot) == 1
-            <=> participant ведёт/слушает очное событие на этой площадке.
+    локации в слоте:
+        presence(participant, location, slot) == 1
+            <=> participant ведёт/слушает очное событие на этой локации.
     - presence >= каждая room_choice этого сочетания;
     - presence <= сумма room_choice этого сочетания;
-    - сумма presence по всем площадкам для (participant, slot) <= 1.
+    - сумма presence по всем локациям для (participant, slot) <= 1.
     Онлайн-занятия аудитории не занимают и presence не создают.
     """
     participants_by_event: dict[int, list[tuple[str, int]]] = defaultdict(list)
@@ -124,20 +124,20 @@ def add_campus_consistency(model: cp_model.CpModel, specs: list[EventSpec],
         if spec.teacher_id is not None:
             participants_by_event[spec.event_id].append(("teacher", spec.teacher_id))
 
-    # (participant, campus, slot) -> room_choice-переменные этого сочетания
+    # (participant, location, slot) -> room_choice-переменные этого сочетания
     choice_vars_by_presence: dict[tuple[tuple[str, int], int, int], list] = defaultdict(list)
     for (event_id, slot_id, room_id), choice_var in onsite_room_choice_vars.items():
-        campus_id = campus_id_by_room_id.get(room_id)
-        if campus_id is None:
-            continue  # аудитория без корпуса — ограничение не применяется
+        location_id = location_id_by_room_id.get(room_id)
+        if location_id is None:
+            continue  # аудитория без корпуса/локации — ограничение не применяется
         for participant in participants_by_event.get(event_id, ()):
-            choice_vars_by_presence[(participant, campus_id, slot_id)].append(choice_var)
+            choice_vars_by_presence[(participant, location_id, slot_id)].append(choice_var)
 
     presence_vars_by_participant_slot: dict[tuple[tuple[str, int], int], list] = defaultdict(list)
-    for (participant, campus_id, slot_id), choice_vars \
+    for (participant, location_id, slot_id), choice_vars \
             in choice_vars_by_presence.items():
         presence_var = model.NewBoolVar(
-            f"pres_{participant[0]}{participant[1]}_c{campus_id}_s{slot_id}")
+            f"pres_{participant[0]}{participant[1]}_l{location_id}_s{slot_id}")
         model.Add(presence_var >= sum(choice_vars))
         model.Add(presence_var <= sum(choice_vars))
         presence_vars_by_participant_slot[(participant, slot_id)].append(presence_var)

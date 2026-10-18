@@ -12,7 +12,7 @@ from django.contrib import admin
 
 from .models import (
     Building,
-    Campus,
+    Location,
     Curriculum,
     CurriculumEntry,
     GenerationIssue,
@@ -102,14 +102,25 @@ class SubjectAdmin(admin.ModelAdmin):
 
 @admin.register(Room)
 class RoomAdmin(admin.ModelAdmin):
-    list_display = ("name", "campus_name", "building", "capacity", "room_type", "is_active")
-    list_filter = ("campus_ptr", "building", "is_active")
+    list_display = ("name", "location_name", "building", "capacity", "room_type", "is_active")
+    list_filter = ("building__location", "building", "is_active")
 
-    @admin.display(description="Кампус", ordering="campus_ptr__name")
-    def campus_name(self, obj: Room) -> str:
-        """Кампус напрямую либо через корпус (свойство Room.campus)."""
-        campus = obj.campus
-        return campus.name if campus is not None else "—"
+    @admin.display(description="Локация", ordering="building__location__name")
+    def location_name(self, obj: Room) -> str:
+        """Локация через корпус (свойство Room.location)."""
+        loc = obj.location
+        return loc.name if loc is not None else "—"
+
+
+@admin.register(Location)
+class LocationAdmin(admin.ModelAdmin):
+    search_fields = ("name", "address")
+
+
+@admin.register(Building)
+class BuildingAdmin(admin.ModelAdmin):
+    list_display = ("name", "location")
+    list_filter = ("location",)
 
 
 @admin.register(LectureStream)
@@ -169,5 +180,3 @@ class ModuleAdmin(admin.ModelAdmin):
 
 
 admin.site.register(CurriculumEntry)
-admin.site.register(Campus)
-admin.site.register(Building)

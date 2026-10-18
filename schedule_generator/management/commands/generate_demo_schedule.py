@@ -4,8 +4,9 @@
 - пары идут с понедельника по субботу, 7 пар в день;
 - на проектную деятельность (ПД) выделены пн и ср — в эти дни другие пары
   не планируются (см. services/day_rules.py);
-- аудитории распределены по нескольким площадкам (кампусам): участник не
-  может оказаться в двух кампусах в одном слоте (см. add_campus_consistency).
+- аудитории распределены по корпусам на разных локациях (час езды между
+  ними): участник не может оказаться на двух локациях в одном слоте
+  (см. add_location_consistency).
 
 Объём демо-данных можно менять флагами --groups / --students-per-group /
 --teachers / --projects (создаются только недостающие объекты, повторный
@@ -28,7 +29,7 @@ from schedule_generator.enums import (
 )
 from schedule_generator.models import (
     Building,
-    Campus,
+    Location,
     GenerationRun,
     Group,
     LectureStream,
@@ -169,17 +170,17 @@ class Command(BaseCommand):
                         start_time=start_time, end_time=end_time,
                     )
 
-        # ---- площадки (кампусы), корпуса и аудитории ----
-        main_campus, _ = Campus.objects.get_or_create(
-            name="Основная площадка", defaults={"address": "приоритетная"})
-        second_campus, _ = Campus.objects.get_or_create(
-            name="Вторая площадка", defaults={"address": "далеко от основной"})
+        # ---- локации, корпуса и аудитории ----
+        # реальные локации университета (между каждой — час езды)
+        lok_mih, _ = Location.objects.get_or_create(name="Михалковская")
+        lok_pri, _ = Location.objects.get_or_create(name="Прянишникова")
+        lok_semen, _ = Location.objects.get_or_create(name="Большая Семёновская")
         main_building, _ = Building.objects.get_or_create(
-            campus=main_campus, name="Корпус А")
+            location=lok_mih, name="Главный")
         lab_building, _ = Building.objects.get_or_create(
-            campus=main_campus, name="Корпус Б (лаборатории)")
-        second_building, _ = Building.objects.get_or_create(
-            campus=second_campus, name="Корпус В")
+            location=lok_mih, name="Лабораторный")
+        pri_building, _ = Building.objects.get_or_create(
+            location=lok_pri, name="Корпус 1")
 
         self._ensure_rooms(main_building, prefix="А", first=101, count=15,
                            capacity=30, room_type="учебная")
@@ -187,7 +188,7 @@ class Command(BaseCommand):
                            capacity=24, room_type="лаборатория")
         self._ensure_rooms(main_building, prefix="Л", first=251, count=4,
                            capacity=24, room_type="лаборатория")
-        self._ensure_rooms(second_building, prefix="В", first=301, count=8,
+        self._ensure_rooms(pri_building, prefix="", first=301, count=8,
                            capacity=30, room_type="учебная")
         for lecture_index in range(1, 4):
             Room.objects.get_or_create(
@@ -391,10 +392,14 @@ class Command(BaseCommand):
     @staticmethod
     def _ensure_rooms(building: Building, *, prefix: str, first: int, count: int,
                       capacity: int, room_type: str) -> None:
-        """Создаёт недостающие аудитории вида «А-101», «Л-201» ... в корпусе."""
+        """Создаёт недостающие аудитории вида «А-101», «Л-201», «301» ... в корпусе.
+
+        Внутри корпуса аудитория может иметь буквенное деление (префикс «Г-»,
+        «Л-») или только номера — это отражено в названии.
+        """
         for offset in range(count):
             Room.objects.get_or_create(
-                name=f"{prefix}-{first + offset}",
+                name=f"{prefix}{first + offset}" if prefix else f"{first + offset}",
                 defaults={"capacity": capacity, "building": building,
                           "room_type": room_type},
             )

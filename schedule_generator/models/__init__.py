@@ -26,10 +26,10 @@ from .generation import GenerationIssue, GenerationRun
 from .lessons import LessonEvent, ScheduledClass
 from .people import Group, Student, Teacher
 from .projects import Project, ProjectEnrollment
-from .resources import Building, Campus, LectureStream, Room, Subject
+from .resources import Building, LectureStream, Location, Room, Subject
 
 __all__ = [
-    "Module", "Curriculum", "CurriculumEntry", "StudyForm", "Campus", "Building",
+    "Module", "Curriculum", "CurriculumEntry", "StudyForm", "Location", "Building",
     "GenerationIssue",
     "GenerationRun",
     "Group",

@@ -50,24 +50,24 @@ def _build_lesson_map(run: GenerationRun, group_ids: set[int],
                .filter(run=run)
                .filter(holder_filter)
                .exclude(event__lesson_type__in=NON_GENERATED_LESSON_TYPES)
-               .select_related("slot", "room", "room__campus_ptr",
-                               "room__building", "room__building__campus",
+               .select_related("slot", "room", "room__building",
+                               "room__building__location",
                                "event__subject",
                                "event__teacher", "event__group", "event__stream"))
     by_slot: dict[int, list[dict]] = {}
     for sc in classes:
         event = sc.event
         fmt = effective_format(event.lesson_type, event.format)
-        room_label = campus_label = ""
+        room_label = location_label = ""
         if sc.room_id:
             room_label = sc.room.location_label
-            campus_label = sc.room.campus_label_for_ui()
+            location_label = sc.room.location_name_for_ui()
         by_slot.setdefault(sc.slot_id, []).append({
             "subject": event.subject.name,
             "lesson_type_display": event.get_lesson_type_display(),
             "teacher": event.teacher.full_name if event.teacher_id else "—",
             "room": room_label if room_label else ("онлайн" if fmt == "ONLINE" else "—"),
-            "campus": campus_label,
+            "location": location_label,
             "is_online": fmt == "ONLINE",
             "highlight": event.lesson_type == LessonType.PD,
         })
