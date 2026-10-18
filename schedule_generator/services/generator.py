@@ -129,10 +129,9 @@ def _build_model(*, slots, rooms, specs: list[EventSpec],
     # кампус (площадка) аудитории; если у аудитории нет корпуса/кампуса —
     # ограничение «одна площадка на слот» для неё не применяется
     campus_id_by_room_id = {
-        room.id: room.building.campus_id
+        room.id: campus_id
         for room in rooms
-        if getattr(room, "building", None) is not None
-        and room.building.campus_id is not None
+        if (campus_id := room.campus_id) is not None
     }
 
     if not slot_ids:

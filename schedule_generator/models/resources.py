@@ -59,10 +59,11 @@ class Room(models.Model):
     """
 
     name = models.CharField("Название", max_length=50, unique=True)
-    campus = models.ForeignKey(
+    campus_ptr = models.ForeignKey(
         Campus, on_delete=models.PROTECT, null=True, blank=True, related_name="rooms",
-        verbose_name="Кампус",
-        help_text="Указывается напрямую, если у кампуса нет деления на корпуса.",
+        db_column="campus_id", verbose_name="Кампус",
+        help_text="Указывается напрямую, если у кампуса нет деления на корпуса. "
+                  "Свойство Room.campus возвращает кампус (через корпус или напрямую).",
     )
     building = models.ForeignKey(Building, on_delete=models.PROTECT, null=True, blank=True, related_name="rooms")
     is_active = models.BooleanField("Доступна для генерации", default=True)
@@ -77,6 +78,30 @@ class Room(models.Model):
 
     def __str__(self):
         return self.name
+
+    @property
+    def campus(self) -> Campus | None:
+        """Кампус, к которому относится аудитория (через корпус или напрямую)."""
+        if self.building_id:
+            return self.building.campus
+        return self.campus_ptr
+
+    @property
+    def location_label(self) -> str:
+        """Человекочитаемое место: «Кампус · Корпус · Аудитория» (без пустых уровней)."""
+        parts = []
+        c = self.campus
+        if c is not None:
+            parts.append(c.name)
+        if self.building_id:
+            parts.append(f"к. {self.building.name}")
+        parts.append(self.name)
+        return " · ".join(parts)
+
+    def campus_label_for_ui(self) -> str:
+        """Название кампуса для интерфейса; если кампус не указан — пустая строка."""
+        c = self.campus
+        return c.name if c is not None else ""
 
 
 class LectureStream(models.Model):
