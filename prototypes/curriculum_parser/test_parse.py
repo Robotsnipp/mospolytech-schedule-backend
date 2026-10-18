@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from parse import FIELDS, exports, number, parse_row, semesters
+from parse import FIELDS, clean_ocr, exports, number, parse_row, semesters
 
 
 class DecodeTests(unittest.TestCase):
@@ -69,6 +69,18 @@ class DecodeTests(unittest.TestCase):
     def test_total_workload_difference_requires_review(self):
         row = self.row(independent_hours="6")
         self.assertTrue(any("Разница общей нагрузки" in warning for warning in row["warnings"]))
+
+
+    def test_synthetic_context_is_removed_without_rewriting_digits(self):
+        self.assertEqual(clean_ocr("Value:36"), "36")
+        self.assertEqual(clean_ocr("Value: 2, 3, 4 Value: 5, 6, 7"), "2, 3, 4 5, 6, 7")
+        self.assertEqual(clean_ocr("Value: 9"), "9")
+
+
+    def test_missing_elective_code_separator_is_not_guessed(self):
+        row = self.row(code="Б1.2.ЭД.11")
+        self.assertIsNone(row["discipline_code"])
+        self.assertIn("Код дисциплины требует проверки", row["warnings"])
 
 
 if __name__ == "__main__":
