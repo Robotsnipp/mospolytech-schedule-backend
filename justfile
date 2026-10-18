@@ -8,3 +8,6 @@ migrate:
 
 resetdb:
     uv run python manage.py reset_db
+
+generate:
+    uv run python manage.py generate_demo_schedule --time-limit 3
