@@ -6,10 +6,11 @@ import json
 
 from django import forms
 from django.contrib import messages
+from django.db import models
 from django.shortcuts import render
 from django.views.decorators.http import require_POST
 
-from schedule_generator.models import GenerationRun, Module, Semester
+from schedule_generator.models import GenerationRun, Group, Module, Semester, Student
 from schedule_generator.services import GenerationError, run_generation
 
 from .checks import run_all_checks
@@ -36,16 +37,49 @@ class GenerateForm(forms.Form):
                                         initial=True, required=False)
 
 
-def _student_schedules_context(run_id: int | None = None):
-    """Расписание глазами разных студентов для последнего (или выбранного) запуска."""
+def _student_schedules_context(run_id: int | None = None,
+                               student_id: int | None = None,
+                               group_id: int | None = None,
+                               group_sort: str = "name",
+                               direction: str = "asc"):
+    """Расписание глазами студентов для последнего (или выбранного) запуска.
+
+    Если передан student_id — показываем расписание конкретного студента;
+    иначе — подборку представителей. Рядом всегда отдаём список групп с
+    сортировкой (по названию / количеству студентов), из которого можно
+    выбрать студента.
+    """
     run = None
     if run_id:
         run = GenerationRun.objects.filter(pk=run_id).first()
     if run is None:
         run = get_latest_run()
     if run is None:
-        return {"student_runs": [], "selected_run_id": None, "student_run": None}
-    students = pick_representative_students(run)
+        return {"student_runs": [], "selected_run_id": None, "student_run": None,
+                "group_rows": []}
+
+    groups = list(Group.objects.filter(semester=run.semester)
+                  .annotate(students_count=models.Count("students")))
+    reverse = direction == "desc"
+    if group_sort == "students":
+        groups.sort(key=lambda g: (g.students_count, g.name), reverse=reverse)
+    else:
+        groups.sort(key=lambda g: g.name, reverse=reverse)
+    group_rows = [{"group": g, "count": g.students_count} for g in groups]
+
+    students: list[Student] = []
+    selected_group_id = _int_or_none(group_id)
+    if selected_group_id and not student_id:
+        # Выбрана группа — показываем расписание её студентов (с лимитом).
+        students = list(Student.objects.filter(group_id=selected_group_id)
+                        .order_by("full_name")[:4])
+    selected_student = None
+    if student_id:
+        selected_student = Student.objects.filter(pk=student_id).first()
+        if selected_student is not None:
+            students = [selected_student]
+    if not students:
+        students = pick_representative_students(run)
     schedules = [build_student_schedule(run, s) for s in students]
     runs = [(r.pk, f"Run #{r.pk} · {r.semester} · {r.status}")
             for r in GenerationRun.objects.order_by("-created_at")[:10]]
@@ -55,7 +89,39 @@ def _student_schedules_context(run_id: int | None = None):
         "student_run": run,
         "student_runs": runs,
         "selected_run_id": run.pk,
+        "selected_student_id": selected_student.pk if selected_student else None,
+        "selected_group_id": selected_group_id,
+        "group_rows": group_rows,
+        "group_sort": group_sort,
+        "group_direction": direction,
+        "group_students_total": sum(g["count"] for g in group_rows),
     }
+
+
+def _int_or_none(value):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _student_options_context(run_id: int | None):
+    """Группы и студенты для выпадающего выбора «расписание студента»."""
+    run = GenerationRun.objects.filter(pk=run_id).first() if run_id else get_latest_run()
+    if run is None:
+        return []
+    students = (Student.objects.filter(group__semester=run.semester)
+                .select_related("group").order_by("group__name", "full_name"))
+    options: list[dict] = []
+    current_group = None
+    for student in students:
+        if student.group_id != current_group:
+            current_group = student.group_id
+            options.append({"label": f"— {student.group.name}"
+                                     + (" (ДПО)" if student.group.is_dpo else "")
+                                     + " —", "value": None})
+        options.append({"label": student.full_name, "value": student.pk})
+    return options
 
 
 def dashboard(request):
@@ -64,14 +130,21 @@ def dashboard(request):
     form.fields["semester"].queryset = Semester.objects.order_by("-start_date")
     form.fields["module"].queryset = Module.objects.order_by("semester", "number")
     runs = GenerationRun.objects.select_related("semester", "module")[:10]
+    selected_run_id = request.GET.get("run") or request.session.get("dev_last_run_id")
     context = {
         "checks": run_all_checks(),
         "form": form,
         "runs": runs,
         "last_run_json": _last_run_dump(),
         **_student_schedules_context(
-            request.GET.get("run") or request.session.get("dev_last_run_id")),
+            selected_run_id,
+            student_id=_int_or_none(request.GET.get("student")),
+            group_id=_int_or_none(request.GET.get("group")),
+            group_sort=request.GET.get("sort") or "name",
+            direction="desc" if request.GET.get("dir") == "desc" else "asc",
+        ),
     }
+    context["student_options"] = _student_options_context(context["selected_run_id"])
     if context["student_run"] is not None:
         request.session["dev_last_run_id"] = context["student_run"].pk
     return render(request, "dev_dashboard/dashboard.html", context)
@@ -112,6 +185,7 @@ def generate(request):
         "runs": GenerationRun.objects.select_related("semester", "module")[:10],
         "last_run_json": _last_run_dump(),
         **_student_schedules_context(request.session.get("dev_last_run_id")),
+        "student_options": [],
     })
 
 

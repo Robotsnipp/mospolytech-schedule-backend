@@ -21,6 +21,7 @@
   table.runs td, table.runs th { border-bottom: 1px solid #eee; padding: .3rem .5rem; text-align: left; font-size: .9rem; }
   /* Расписание глазами студента */
   select.run-picker { padding: .3rem .5rem; margin-bottom: 1rem; font-size: .95rem; }
+  .picker-row { display: flex; gap: 1.5rem; flex-wrap: wrap; align-items: center; }
   .student-card { border: 1px solid #ddd; border-radius: 8px; padding: 1rem; margin-bottom: 1.5rem; }
   .student-card h3 { margin: 0 0 .2rem; font-size: 1.05rem; }
   .student-card .meta { color: #555; font-size: .85rem; margin-bottom: .6rem; }
@@ -35,6 +36,17 @@
   td.empty { background: #fcfcfc; }
   .legend { font-size: .8rem; color: #555; margin: .5rem 0 1rem; }
   .legend span { display: inline-block; padding: .1rem .5rem; border-radius: 4px; margin-right: .5rem; }
+  /* Группы и выбор студента */
+  table.groups { border-collapse: collapse; width: 100%; margin-bottom: 1.5rem; }
+  table.groups th, table.groups td { border-bottom: 1px solid #eee; padding: .35rem .5rem; text-align: left; font-size: .9rem; }
+  table.groups th a { text-decoration: none; color: #1565c0; }
+  table.groups th a.active { font-weight: 700; }
+  .sort-arrow { font-size: .8em; }
+  details.group-students { margin: 0; }
+  details.group-students summary { cursor: pointer; color: #1565c0; font-size: .85rem; }
+  .chip { display: inline-block; background: #e8eaf6; border-radius: 12px; padding: .1rem .6rem; margin: .15rem; font-size: .8rem; color: #1a237e; text-decoration: none; }
+  .chip.selected { background: #1565c0; color: #fff; font-weight: 600; }
+  .reset-link { font-size: .85rem; }
 </style>
 </head>
 <body>
@@ -85,6 +97,7 @@
 <h2>Расписание глазами студентов</h2>
 {% if student_run %}
 <form method="get" action="">
+  {% if selected_student_id %}<input type="hidden" name="student" value="{{ selected_student_id }}">{% endif %}
   <label>Запуск:
     <select class="run-picker" name="run" onchange="this.form.submit()">
       {% for pk, label in student_runs %}
@@ -98,6 +111,59 @@
   <span style="background:#ede7f6;">онлайн (лекция/ДПО)</span>
   <span style="background:#fff8e1; outline:2px solid #f9a825;">ПД (группа по проекту)</span>
 </div>
+
+{# ---- выбор конкретного студента ---- #}
+<form method="get" action="" class="picker-row">
+  {% if selected_group_id %}<input type="hidden" name="group" value="{{ selected_group_id }}">{% endif %}
+  <label>Студент:
+    <select class="run-picker" name="student" onchange="this.form.submit()">
+      <option value="">— все представители —</option>
+      {% for opt in student_options %}
+        {% if opt.value %}
+        <option value="{{ opt.value }}" {% if opt.value == selected_student_id %}selected{% endif %}>{{ opt.label }}</option>
+        {% else %}
+        <option disabled>────────── {{ opt.label }} ──────────</option>
+        {% endif %}
+      {% endfor %}
+    </select>
+  </label>
+  {% if selected_student_id %}
+  <a class="reset-link" href="?run={{ selected_run_id }}">сбросить выбор</a>
+  {% endif %}
+</form>
+
+{# ---- список групп с сортировкой: клик по названию студента открывает его расписание ---- #}
+<h3>Группы семестра ({{ group_rows|length }} групп, {{ group_students_total }} студентов)</h3>
+<table class="groups">
+  <tr>
+    <th><a href="?run={{ selected_run_id }}&sort=name&dir={% if group_sort == 'name' and group_direction == 'asc' %}desc{% else %}asc{% endif %}"
+           class="{% if group_sort == 'name' %}active{% endif %}">Группа
+      {% if group_sort == 'name' %}<span class="sort-arrow">{% if group_direction == 'asc' %}▲{% else %}▼{% endif %}</span>{% endif %}</a></th>
+    <th><a href="?run={{ selected_run_id }}&sort=students&dir={% if group_sort == 'students' and group_direction == 'asc' %}desc{% else %}asc{% endif %}"
+           class="{% if group_sort == 'students' %}active{% endif %}">Студентов
+      {% if group_sort == 'students' %}<span class="sort-arrow">{% if group_direction == 'asc' %}▲{% else %}▼{% endif %}</span>{% endif %}</a></th>
+    <th>Студенты</th>
+  </tr>
+  {% for row in group_rows %}
+  <tr>
+    <td><b><a href="?run={{ selected_run_id }}&group={{ row.group.pk }}&sort={{ group_sort }}&dir={{ group_direction }}">{{ row.group.name }}</a></b>
+        {% if row.group.is_dpo %}<i>(ДПО)</i>{% endif %}
+        {% if row.group.is_first_year_first_semester %}<i>(перваки)</i>{% endif %}</td>
+    <td>{{ row.count }}</td>
+    <td>
+      <details class="group-students">
+        <summary>показать студентов</summary>
+        {% for st in row.group.students.all|slice:":40" %}
+        <a class="chip{% if st.pk == selected_student_id %} selected{% endif %}"
+           href="?run={{ selected_run_id }}&student={{ st.pk }}">{{ st.full_name }}</a>
+        {% endfor %}
+        {% if row.count > 40 %}<span style="font-size:.8rem;color:#777;">… ещё {{ row.count|add:"-40" }}</span>{% endif %}
+      </details>
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+
 {% for s in student_schedules %}
 <div class="student-card">
   <h3>{{ s.student.full_name }}</h3>

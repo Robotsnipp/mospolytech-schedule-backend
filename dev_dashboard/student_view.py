@@ -76,6 +76,11 @@ class StudentSchedule:
     pe_note: str = ""
 
     @property
+    def day_names(self) -> list[str]:
+        """Названия дней для колонок таблицы (пн–сб)."""
+        return DAY_NAMES[:self.num_days]
+
+    @property
     def grid(self) -> list[dict]:
         """Сетка для шаблона: строки (номера пар) с ячейками по дням недели.
 
