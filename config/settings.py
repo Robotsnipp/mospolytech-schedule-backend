@@ -47,6 +47,12 @@ INSTALLED_APPS = [
     'schedule_generator',
 ]
 
+# Dev-панель проверки подключается ТОЛЬКО в режиме разработки (DEBUG=True).
+# В продакшене приложение не импортируется вообще: без DEBUG его нельзя
+# ни открыть по URL, ни задействовать через INSTALLED_APPS.
+if DEBUG:
+    INSTALLED_APPS.append('dev_dashboard')
+
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',

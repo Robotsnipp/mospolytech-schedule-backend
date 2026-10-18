@@ -135,8 +135,10 @@ class Command(BaseCommand):
                                            for group in stream.groups.all())},
         )
 
-        # ---- очные практики/лаборатории на каждую группу ----
-        for group in groups.values():
+        # ---- очные практики/лаборатории на каждую учебную группу ----
+        # Группы ДПО исключаем: на них по правилу LessonEvent.clean()
+        # можно планировать только ДПО и внеучебку.
+        for group in Group.objects.filter(semester=semester, is_dpo=False):
             LessonEvent.objects.get_or_create(
                 semester=semester, subject=subjects["Базы данных"],
                 lesson_type=LessonType.LAB, group=group,
@@ -151,7 +153,7 @@ class Command(BaseCommand):
             )
 
         # ---- физкультура: есть в данных, но НЕ генерируется ----
-        for group in groups.values():
+        for group in Group.objects.filter(semester=semester, is_dpo=False):
             LessonEvent.objects.get_or_create(
                 semester=semester, subject=subjects["Физ-ра"],
                 lesson_type=LessonType.PE, group=group,
