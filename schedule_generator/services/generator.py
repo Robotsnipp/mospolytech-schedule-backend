@@ -11,6 +11,9 @@
 - Лекции (онлайн, на поток групп): лекция одного потока идёт строго в один
   слот недели (все группы потока слушают её одновременно); группы-слушатели
   не могут пересекаться с другими занятиями в этом слоте; аудитория не нужна.
+  Лекции ставятся в любой день, кроме воскресенья (в т.ч. в дни ПД), но не
+  подряд с другими занятиями слушателей — между ними обязателен пропуск
+  (add_lecture_not_adjacent).
 - Физкультура (PE): полностью исключается из модели — студент приходит
   когда и куда хочет (см. services/event_specs.py).
 - ПД (очно, «группа» = студенты, выбравшие проект): блокируются конкретные
@@ -51,6 +54,7 @@ from .constraints import (
     add_campus_consistency,
     add_day_restrictions,
     add_event_pair_vars,
+    add_lecture_not_adjacent,
     add_lecture_single_slot,
     add_room_exclusivity,
     add_teacher_exclusivity,
@@ -144,6 +148,8 @@ def _build_model(*, slots, rooms, specs: list[EventSpec],
 
     # ---- жёсткие ограничения (services/constraints.py) ----
     add_lecture_single_slot(model, specs, slot_ids, pair_placement_vars)
+    add_lecture_not_adjacent(model, specs, slot_ids, day_of_week_by_slot_id,
+                             pair_placement_vars)
     add_room_exclusivity(model, onsite_room_choice_vars)
     add_attendee_exclusivity(model, specs, slot_ids, pair_placement_vars)
     add_teacher_exclusivity(model, specs, slot_ids, pair_placement_vars)

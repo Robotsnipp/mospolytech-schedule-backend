@@ -20,6 +20,7 @@ from schedule_generator.models import (
     Subject,
     TimeSlot,
     WeekPattern,
+    LectureStream,
 )
 from schedule_generator.services.generation import GenerationError, run_generation
 
@@ -194,3 +195,80 @@ class ShortageDiagnosticsTests(TestCase):
         run = GenerationRun.objects.get(pk=result.run_id)
         issue_text = run.issues.filter(event=event).first().text
         self.assertIn('нет активной аудитории, подходящей по вместимости', issue_text)
+
+
+class LectureDayRulesTests(TestCase):
+    """Лекции: любой день кроме воскресенья + обязательный пропуск между
+    лекцией и соседними парами того же дня (hard-ограничения модели)."""
+
+    def setUp(self):
+        self.semester = Semester.objects.create(name='Lect', start_date=date(2026, 9, 1))
+        self.pattern = WeekPattern.objects.create(semester=self.semester)
+        self.subject = Subject.objects.create(name='Physics')
+        self.group = Group.objects.create(name='G-lect')
+        Student.objects.create(group=self.group, full_name='Студент')
+        # слоты: пн (день ПД) и вт — по две пары подряд в каждом дне
+        self.mon_1 = TimeSlot.objects.create(week_pattern=self.pattern, day_of_week=0, lesson_number=1)
+        self.mon_2 = TimeSlot.objects.create(week_pattern=self.pattern, day_of_week=0, lesson_number=2)
+        self.tue_1 = TimeSlot.objects.create(week_pattern=self.pattern, day_of_week=1, lesson_number=1)
+        self.tue_2 = TimeSlot.objects.create(week_pattern=self.pattern, day_of_week=1, lesson_number=2)
+        self.stream = LectureStream.objects.create(semester=self.semester, subject=self.subject)
+        self.stream.groups.add(self.group)
+
+    def _lecture(self):
+        return LessonEvent.objects.create(
+            semester=self.semester, subject=self.subject, stream=self.stream,
+            lesson_type=LessonType.LECTURE, pairs_per_week=1)
+
+    def _practice(self):
+        return LessonEvent.objects.create(
+            semester=self.semester, subject=self.subject, group=self.group,
+            lesson_type=LessonType.PRACTICE, pairs_per_week=1)
+
+    def test_lecture_can_be_placed_on_pd_day(self):
+        """Лекция ставится в понедельник/вторник (раньше дни ПД — пн/ср —
+        были для лекций закрыты); вт#1 исключён: подряд с вт#2 недопустимо."""
+        lecture = self._lecture()
+        result = run_generation(semester=self.semester, time_limit_seconds=2)
+        self.assertEqual(result.status, 'SOLVED')
+        placed = ScheduledClass.objects.get(run_id=result.run_id, event=lecture)
+        self.assertIn(placed.slot_id, {self.mon_1.id, self.mon_2.id, self.tue_2.id})
+
+    def test_lecture_never_adjacent_to_group_lesson_same_day(self):
+        """Между лекцией и другой парой той же группы обязателен пропуск:
+        при полностью забитом вторнике (вт#1+вт#2 подряд) лекция уходит в
+        понедельник, а не встаёт подряд с практикой."""
+        lecture = self._lecture()
+        practice = self._practice()
+        Room.objects.create(name='R-lect', capacity=30)
+        result = run_generation(semester=self.semester, time_limit_seconds=2)
+        self.assertEqual(result.status, 'SOLVED')
+        lecture_slot = ScheduledClass.objects.get(run_id=result.run_id,
+                                                  event=lecture).slot_id
+        practice_slots = set(ScheduledClass.objects.filter(
+            run_id=result.run_id, event=practice).values_list('slot_id', flat=True))
+        slot_by_id = {slot.id: slot for slot in
+                      (self.mon_1, self.mon_2, self.tue_1, self.tue_2)}
+        lecture_slot_obj = slot_by_id[lecture_slot]
+        # практика заняла оба слота вторника => лекция ушла в понедельник
+        self.assertEqual(practice_slots, {self.tue_1.id, self.tue_2.id})
+        self.assertIn(lecture_slot, {self.mon_1.id, self.mon_2.id})
+        # ни одна пара группы не стоит вплотную к лекции в тот же день
+        for practice_slot_id in practice_slots:
+            practice_slot = slot_by_id[practice_slot_id]
+            self.assertFalse(practice_slot.day_of_week == lecture_slot_obj.day_of_week
+                             and abs(practice_slot.lesson_number
+                                     - lecture_slot_obj.lesson_number) == 1)
+
+    def test_lecture_not_placed_when_no_gap_exists(self):
+        """Если все слоты недели заняты парами группы подряд и пропуска нет,
+        лекция не размещается — статус PARTIAL (правило жёсткое)."""
+        lecture = self._lecture()
+        Room.objects.create(name='R-tight', capacity=30)
+        LessonEvent.objects.create(
+            semester=self.semester, subject=self.subject, group=self.group,
+            lesson_type=LessonType.PRACTICE, pairs_per_week=4)  # займут все 4 слота
+        result = run_generation(semester=self.semester, time_limit_seconds=2)
+        self.assertEqual(result.status, 'PARTIAL')
+        self.assertFalse(ScheduledClass.objects.filter(run_id=result.run_id,
+                                                       event=lecture).exists())

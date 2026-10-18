@@ -88,7 +88,8 @@ def build_event_specs(events) -> tuple[list[EventSpec], list[tuple]]:
             blocking_group_ids=blocking_group_ids,
             blocking_student_ids=blocking_student_ids,
             stream_id=stream_id,
-            # правила размещения по дням (ПД — пн/ср, остальное — вт/чт/пт/сб)
+            # правила размещения по дням: ПД — пн/ср, лекции — пн–сб (не вс),
+            # остальные пары — вт/чт/пт/сб (см. day_rules.py)
             allowed_days=allowed_days_for(event.lesson_type),
         ))
     return specs, skipped

@@ -32,6 +32,88 @@ def add_lecture_single_slot(model: cp_model.CpModel, specs: list[EventSpec],
             )
 
 
+def add_lecture_not_adjacent(model: cp_model.CpModel, specs: list[EventSpec],
+                             slot_ids: list[int],
+                             day_of_week_by_slot_id: dict[int, int],
+                             pair_placement_vars: dict) -> None:
+    """Лекции слушателей не могут идти подряд: между лекцией и предыдущей или
+    следующей парой того же дня должен быть пропуск (свободный слот).
+
+    Лекцию можно ставить в любой день недели (кроме воскресенья — см.
+    day_rules.LECTURE_ALLOWED_DAYS), включая дни ПД; но соседний по номеру
+    пары слот того же дня блокируется для всех групп-слушателей потока, если
+    в нём есть любое другое занятие этих групп. Ограничение симметричное:
+    лекция запрещена как сразу после, так и сразу перед занятием группы.
+
+    Реализация: для каждой группы g и слота s (день d, номер k) вводится
+    вспомогательная булева переменная
+        other_{g,s} = 1 <=> в слоте s стоит хотя бы одно занятие группы g,
+                            КРОМЕ лекций, которым разрешён этот слот
+                            (чтобы лекция потока не блокировала саму себя);
+    затем для каждой лекции L потока, куда входит g, и каждого соседа s'
+    слота s того же дня:
+        place[L, s'] + other_{g,s} <= 1.
+    Занятия, которые и так не могут стоять в слоте s (например, обычные пары
+    в пн/ср — дни ПД), в other не входят: иначе запрет ложно срабатывал бы
+    относительно слотов, всегда пустых для этой группы.
+    """
+    lecture_specs = [spec for spec in specs if spec.stream_id is not None]
+    if not lecture_specs:
+        return
+
+    # слоты одного дня, упорядоченные по номеру пары
+    # (slot_ids уже отсорированы по (day, lesson_number) — см. generator.py)
+    slot_ids_by_day: dict[int, list[int]] = defaultdict(list)
+    for slot_id in slot_ids:
+        slot_ids_by_day[day_of_week_by_slot_id[slot_id]].append(slot_id)
+
+    # лекции, которым разрешён слот по правилам дней: они исключаются из
+    # «других занятий», чтобы лекция не создавала запрет против самой себя
+    lectures_allowed_in_slot: dict[int, set[int]] = defaultdict(set)
+    for spec in lecture_specs:
+        for slot_id in slot_ids:
+            if (not spec.allowed_days
+                    or day_of_week_by_slot_id[slot_id] in spec.allowed_days):
+                lectures_allowed_in_slot[slot_id].add(spec.event_id)
+
+    # слагаемые «занятие группы g в слоте s» (кроме разрешённых здесь лекций)
+    other_terms_by_group_slot: dict[tuple[int, int], list] = defaultdict(list)
+    for spec in specs:
+        for slot_id in slot_ids:
+            if spec.event_id in lectures_allowed_in_slot[slot_id]:
+                continue
+            for group_id in spec.blocking_group_ids:
+                other_terms_by_group_slot[(group_id, slot_id)].append(
+                    pair_placement_vars[(spec.event_id, slot_id)])
+
+    # other-переменная создаётся один раз на (группа, слот) и переиспользуется
+    other_var_by_group_slot: dict[tuple[int, int], cp_model.IntVar] = {}
+    for day, day_slot_ids in slot_ids_by_day.items():
+        for index, slot_id in enumerate(day_slot_ids):
+            neighbor_slot_ids = []
+            if index > 0:
+                neighbor_slot_ids.append(day_slot_ids[index - 1])
+            if index + 1 < len(day_slot_ids):
+                neighbor_slot_ids.append(day_slot_ids[index + 1])
+            if not neighbor_slot_ids:
+                continue
+            for spec in lecture_specs:
+                for group_id in spec.blocking_group_ids:
+                    key = (group_id, slot_id)
+                    other_terms = other_terms_by_group_slot[key]
+                    if not other_terms:
+                        continue  # в слоте группе ставить нечего — пропуск гарантирован
+                    other_var = other_var_by_group_slot.get(key)
+                    if other_var is None:
+                        other_var = model.NewBoolVar(f"other_{group_id}_{slot_id}")
+                        model.Add(other_var == sum(other_terms))
+                        other_var_by_group_slot[key] = other_var
+                    for neighbor_slot_id in neighbor_slot_ids:
+                        model.Add(pair_placement_vars[(spec.event_id,
+                                                       neighbor_slot_id)]
+                                  + other_var <= 1)
+
+
 def add_room_exclusivity(model: cp_model.CpModel, onsite_room_choice_vars: dict) -> None:
     """В одной аудитории в одном слоте — не более одного очного занятия."""
     vars_by_slot_room: dict[tuple[int, int], list] = {}
