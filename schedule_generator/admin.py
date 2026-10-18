@@ -61,8 +61,9 @@ class TimeSlotAdmin(admin.ModelAdmin):
 
 @admin.register(Group)
 class GroupAdmin(admin.ModelAdmin):
-    list_display = ("name", "curriculum", "semester", "is_first_year_first_semester", "is_dpo")
-    list_filter = ("is_dpo",)
+    list_display = ("name", "admission_year", "curriculum", "semester",
+                    "is_first_year_first_semester", "is_dpo")
+    list_filter = ("is_dpo", "admission_year")
     search_fields = ("name",)
 
 
@@ -101,7 +102,8 @@ class SubjectAdmin(admin.ModelAdmin):
 
 @admin.register(Room)
 class RoomAdmin(admin.ModelAdmin):
-    list_display = ("name", "building", "capacity", "room_type", "is_active")
+    list_display = ("name", "campus", "building", "capacity", "room_type", "is_active")
+    list_filter = ("campus", "building", "is_active")
 
 
 @admin.register(LectureStream)

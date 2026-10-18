@@ -32,7 +32,7 @@ class PlanningTests(TestCase):
         self.pattern = WeekPattern.objects.create(semester=self.semester)
         self.slot = TimeSlot.objects.create(week_pattern=self.pattern, day_of_week=0, lesson_number=1)
         self.subject = Subject.objects.create(name='Math')
-        self.group = Group.objects.create(name='G')
+        self.group = Group.objects.create(name='261-101')
         self.room = Room.objects.create(name='R', capacity=30)
 
     def event(self, module=None):
@@ -80,6 +80,28 @@ class PlanningTests(TestCase):
     def test_module_date_constraint(self):
         with self.assertRaises(IntegrityError), transaction.atomic():
             Module.objects.create(semester=self.semester, number=3, start_date=date(2026, 12, 1), end_date=date(2026, 11, 1), teaching_weeks=1)
+
+    def test_group_name_formats_regular_and_dpo(self):
+        """Обычные группы — формат «241-334», группы ДПО — свой формат «ДПО-...»."""
+        # обычная группа: валидный формат, год зачисления считается из названия
+        regular = Group(name='241-334')
+        regular.full_clean()
+        self.assertEqual(regular.admission_year, 2024)
+        # невалидное имя обычной группы отклоняется
+        with self.assertRaises(ValidationError):
+            Group(name='G').full_clean()
+        with self.assertRaises(ValidationError):
+            Group(name='2413345678').full_clean()
+        # группа ДПО: свой формат, год зачисления не выводится и не заполняется
+        dpo = Group(name='ДПО-2026-07', is_dpo=True)
+        dpo.full_clean()
+        self.assertIsNone(dpo.admission_year)
+        Group.objects.create(name='ДПО Python', is_dpo=True)
+        # обычному формату группа ДПО не следует, а ДПО-имени — обычная группа
+        with self.assertRaises(ValidationError):
+            Group(name='241-334', is_dpo=True).full_clean()
+        with self.assertRaises(ValidationError):
+            Group(name='Группа слушателей').full_clean()
 
     def test_curriculum_form_and_subject_validation(self):
         values = dict(name='Web', program_code='09.03.01', profile='Web', admission_year=2025, duration_months=48)

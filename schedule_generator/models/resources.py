@@ -15,18 +15,35 @@ class Subject(models.Model):
 
 
 class Campus(models.Model):
-    name = models.CharField("Название площадки", max_length=100, unique=True)
+    """Кампус университета (площадка).
+
+    Примеры кампусов: Михалковская, Прянишникова, Большая Семёновская,
+    Павла Корчагина, Дубравная (Дубровский), Автозаводская.
+    Внутри кампуса могут быть корпуса (Building), а может и не быть —
+    тогда аудитории относятся к кампусу напрямую.
+    """
+
+    name = models.CharField("Название кампуса", max_length=100, unique=True)
     address = models.CharField("Адрес", max_length=250, blank=True)
+
+    class Meta:
+        verbose_name = "Кампус"
+        verbose_name_plural = "Кампусы"
+        ordering = ["name"]
 
     def __str__(self):
         return self.name
 
 
 class Building(models.Model):
+    """Корпус внутри кампуса (необязательный уровень: у кампуса может не быть корпусов)."""
+
     campus = models.ForeignKey(Campus, on_delete=models.PROTECT, related_name="buildings")
     name = models.CharField("Корпус", max_length=100)
 
     class Meta:
+        verbose_name = "Корпус"
+        verbose_name_plural = "Корпуса"
         constraints = [models.UniqueConstraint(fields=["campus", "name"], name="uniq_campus_building")]
 
     def __str__(self):
@@ -35,9 +52,18 @@ class Building(models.Model):
 
 class Room(models.Model):
     """Аудитория. capacity ограничивает только очные занятия;
-    онлайн-занятия (лекции, часть внеучебки) проходят без аудитории."""
+    онлайн-занятия (лекции, часть внеучебки) проходят без аудитории.
+
+    Привязка к месту: building (если у кампуса есть корпуса) либо campus
+    напрямую (если деления на корпуса нет).
+    """
 
     name = models.CharField("Название", max_length=50, unique=True)
+    campus = models.ForeignKey(
+        Campus, on_delete=models.PROTECT, null=True, blank=True, related_name="rooms",
+        verbose_name="Кампус",
+        help_text="Указывается напрямую, если у кампуса нет деления на корпуса.",
+    )
     building = models.ForeignKey(Building, on_delete=models.PROTECT, null=True, blank=True, related_name="rooms")
     is_active = models.BooleanField("Доступна для генерации", default=True)
     room_type = models.CharField("Тип помещения", max_length=50, blank=True)
