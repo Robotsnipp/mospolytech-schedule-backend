@@ -28,6 +28,21 @@ from schedule_generator.models import (
 DAY_NAMES = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота"]
 
 
+def room_display(sc: ScheduledClass, *, online_label: str = "онлайн") -> str:
+    """Аудитория занятия для интерфейса: «С-301 · к. Большая семёновская ул.».
+
+    Корпус (площадка) показывается всегда, когда он известен: корпуса далеко
+    друг от друга (~час езды), и без названия корпуса адрес занятия непонятен.
+    """
+    if sc.room_id is None:
+        return online_label
+    label = sc.room.name
+    building = getattr(sc.room, "building", None)
+    if building is not None:
+        label += f" · к. {building}"
+    return label
+
+
 def get_latest_run() -> GenerationRun | None:
     return GenerationRun.objects.order_by("-created_at").first()
 
@@ -50,7 +65,7 @@ def _build_lesson_map(run: GenerationRun, group_ids: set[int],
                .filter(run=run)
                .filter(holder_filter)
                .exclude(event__lesson_type__in=NON_GENERATED_LESSON_TYPES)
-               .select_related("slot", "room", "event__subject",
+               .select_related("slot", "room__building", "event__subject",
                                "event__teacher", "event__group", "event__stream"))
     by_slot: dict[int, list[dict]] = {}
     for sc in classes:
@@ -60,7 +75,7 @@ def _build_lesson_map(run: GenerationRun, group_ids: set[int],
             "subject": event.subject.name,
             "lesson_type_display": event.get_lesson_type_display(),
             "teacher": event.teacher.full_name if event.teacher_id else "—",
-            "room": sc.room.name if sc.room_id else ("онлайн" if fmt == "ONLINE" else "—"),
+            "room": room_display(sc, online_label=("онлайн" if fmt == "ONLINE" else "—")),
             "is_online": fmt == "ONLINE",
             "highlight": event.lesson_type == LessonType.PD,
         })

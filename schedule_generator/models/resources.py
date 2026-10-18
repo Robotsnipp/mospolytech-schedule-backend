@@ -23,6 +23,15 @@ class Campus(models.Model):
 
 
 class Building(models.Model):
+    """Учебный корпус.
+
+    Корпуса (Михалковская, Прянишникова, Большая семёновская и т.д.)
+    находятся далеко друг от друга (~час езды), поэтому каждый корпус —
+    отдельная площадка (кампус). Объединять корпуса в общие площадки не
+    нужно: генератор запрещает участнику быть на двух площадках в одном
+    слоте (services/constraints.add_campus_consistency).
+    """
+
     campus = models.ForeignKey(Campus, on_delete=models.PROTECT, related_name="buildings")
     name = models.CharField("Корпус", max_length=100)
 
@@ -30,7 +39,7 @@ class Building(models.Model):
         constraints = [models.UniqueConstraint(fields=["campus", "name"], name="uniq_campus_building")]
 
     def __str__(self):
-        return f"{self.campus}: {self.name}"
+        return self.name
 
 
 class Room(models.Model):
@@ -51,6 +60,13 @@ class Room(models.Model):
 
     def __str__(self):
         return self.name
+
+    @property
+    def building_display(self) -> str:
+        """Корпус аудитории для интерфейса; у аудиторий без корпуса — пустая строка."""
+        if self.building_id is None:
+            return ""
+        return str(self.building)
 
 
 class LectureStream(models.Model):

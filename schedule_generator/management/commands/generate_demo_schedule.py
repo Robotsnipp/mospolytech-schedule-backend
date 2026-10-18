@@ -99,6 +99,28 @@ PD_SUBJECTS = ["Веб-разработка", "Мобильная разрабо
 # Внеучебка: (предмет, очная ли).
 CLUB_SUBJECTS = [("Клуб робототехники", True), ("Дебатный клуб", False),
                  ("Школа медиа продакшена", True)]
+# Реальные корпуса. Каждый далеко от других (~час езды), поэтому каждый
+# корпус — отдельная площадка (кампус): корпуса не объединяются в площадки.
+BUILDINGS = ["Михалковская ул.", "Прянишникова ул.", "Большая семёновская ул.",
+             "Павла Корчагина ул.", "Дубровский ул.", "Автозаводская ул."]
+# Аудитории каждого корпуса: (префикс, первый номер, сколько, вместимость, тип).
+BUILDING_ROOMS = {
+    "Михалковская ул.": [("М", 101, 8, 30, "учебная"), ("М", 151, 3, 24, "лаборатория")],
+    "Прянишникова ул.": [("П", 201, 8, 24, "лаборатория"), ("П", 251, 5, 30, "учебная")],
+    "Большая семёновская ул.": [("С", 301, 10, 30, "учебная"), ("С", 351, 4, 24, "лаборатория")],
+    "Павла Корчагина ул.": [("К", 501, 7, 30, "учебная"), ("К", 551, 3, 24, "лаборатория")],
+    "Дубровский ул.": [("Д", 601, 6, 30, "учебная")],
+    "Автозаводская ул.": [("А", 701, 8, 30, "учебная"), ("А", 751, 3, 24, "лаборатория")],
+}
+# Лекционные залы (очные аудитории для больших потоков) по корпусам.
+LECTURE_HALLS = {
+    "Большая семёновская ул.": [801, 802],
+    "Михалковская ул.": [811],
+    "Прянишникова ул.": [821],
+    "Павла Корчагина ул.": [831],
+    "Автозаводская ул.": [841],
+    "Дубровский ул.": [851],
+}
 # Программы ДПО: (предмет, формат ONSITE/ONLINE).
 DPO_PROGRAMS = [("Программирование на Python", Format.ONLINE),
                 ("Сетевые технологии", Format.ONSITE),
@@ -169,31 +191,31 @@ class Command(BaseCommand):
                         start_time=start_time, end_time=end_time,
                     )
 
-        # ---- площадки (кампусы), корпуса и аудитории ----
-        main_campus, _ = Campus.objects.get_or_create(
-            name="Основная площадка", defaults={"address": "приоритетная"})
-        second_campus, _ = Campus.objects.get_or_create(
-            name="Вторая площадка", defaults={"address": "далеко от основной"})
-        main_building, _ = Building.objects.get_or_create(
-            campus=main_campus, name="Корпус А")
-        lab_building, _ = Building.objects.get_or_create(
-            campus=main_campus, name="Корпус Б (лаборатории)")
-        second_building, _ = Building.objects.get_or_create(
-            campus=second_campus, name="Корпус В")
+        # ---- корпуса и аудитории ----
+        # Реальные корпуса далеко друг от друга (~час езды), поэтому каждый
+        # корпус — отдельная площадка (кампус): общей площадки, объединяющей
+        # несколько корпусов, здесь нет. Решатель не поставит участника в двух
+        # корпусах (на двух площадках) в одном слоте — см.
+        # services/constraints.add_campus_consistency.
+        buildings = {}
+        for building_name in BUILDINGS:
+            campus, _ = Campus.objects.get_or_create(
+                name=building_name, defaults={"address": "далеко от других корпусов"})
+            buildings[building_name], _ = Building.objects.get_or_create(
+                campus=campus, name=building_name)
 
-        self._ensure_rooms(main_building, prefix="А", first=101, count=15,
-                           capacity=30, room_type="учебная")
-        self._ensure_rooms(lab_building, prefix="Л", first=201, count=8,
-                           capacity=24, room_type="лаборатория")
-        self._ensure_rooms(main_building, prefix="Л", first=251, count=4,
-                           capacity=24, room_type="лаборатория")
-        self._ensure_rooms(second_building, prefix="В", first=301, count=8,
-                           capacity=30, room_type="учебная")
-        for lecture_index in range(1, 4):
-            Room.objects.get_or_create(
-                name=f"Зал {400 + lecture_index}",
-                defaults={"capacity": 120, "building": main_building,
-                          "room_type": "лекционный зал"})
+        # Аудитории по корпусам: справочники BUILDING_ROOMS и LECTURE_HALLS.
+        for building_name, room_groups in BUILDING_ROOMS.items():
+            for prefix, first, count, capacity, room_type in room_groups:
+                self._ensure_rooms(buildings[building_name], prefix=prefix,
+                                   first=first, count=count, capacity=capacity,
+                                   room_type=room_type)
+        for building_name, hall_numbers in LECTURE_HALLS.items():
+            for hall_number in hall_numbers:
+                Room.objects.get_or_create(
+                    name=f"Зал {hall_number}",
+                    defaults={"capacity": 120, "building": buildings[building_name],
+                              "room_type": "лекционный зал"})
 
         # ---- преподаватели ----
         for teacher_index in range(1, teachers + 1):

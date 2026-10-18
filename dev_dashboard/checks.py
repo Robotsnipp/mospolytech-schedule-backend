@@ -24,6 +24,8 @@ from django.db.models import Count
 
 from schedule_generator.enums import Format, LessonType
 from schedule_generator.models import (
+    Building,
+    Campus,
     GenerationRun,
     Group,
     LessonEvent,
@@ -93,6 +95,41 @@ def check_resources() -> CheckResult:
                            msg + f" Для {len(tight)} очных событий нет аудитории по "
                                  "вместимости — такие пары решатель пропустит (см. PARTIAL).")
     return CheckResult("Ресурсы", OK, msg)
+
+
+def check_buildings() -> CheckResult:
+    """Корпуса и площадки: каждый корпус — отдельная площадка.
+
+    Корпуса (Михалковская, Прянишникова, ...) далеко друг от друга (~час
+    езды), поэтому объединять их в одну площадку нельзя: проверяем, что у
+    каждого корпуса ровно своя площадка и нет корпусов без площадки.
+    """
+    buildings = Building.objects.select_related("campus")
+    if not buildings.exists():
+        return CheckResult("Корпуса и площадки", WARNING,
+                           "В БД нет ни одного корпуса — запустите демо-данные "
+                           "или заведите корпуса с площадками.")
+    no_campus = buildings.filter(campus__isnull=True).count()
+    shared = (Campus.objects.annotate(n=Count("buildings")).filter(n__gt=1)
+              .values_list("name", flat=True))
+    problems = []
+    if no_campus:
+        problems.append(f"{no_campus} корпусов без площадки")
+    if shared:
+        problems.append("площадки объединяют несколько корпусов: "
+                        + ", ".join(shared))
+    if problems:
+        return CheckResult("Корпуса и площадки", ERROR, "; ".join(problems)
+                           + " — корпуса далеко друг от друга и не должны "
+                           "объединяться в общие площадки.")
+    rooms_no_building = Room.objects.filter(building__isnull=True).count()
+    msg = (f"Корпусов: {buildings.count()}, площадок: {Campus.objects.count()} "
+           f"(по одной на корпус).")
+    if rooms_no_building:
+        return CheckResult("Корпуса и площадки", WARNING,
+                           msg + f" Аудиторий без корпуса: {rooms_no_building} — "
+                                 "для них правило площадок не применяется.")
+    return CheckResult("Корпуса и площадки", OK, msg)
 
 
 def check_dpo_groups() -> CheckResult:
@@ -239,9 +276,34 @@ def check_teacher_conflicts() -> CheckResult:
                        "Преподаватель не ведёт две пары одновременно.")
 
 
+def check_campus_trips() -> CheckResult:
+    """Перемещения между площадками: пары последнего запуска размещены по
+    корпусам; участник не бывает в двух корпусах-площадках в одном слоте."""
+    run = _latest_run()
+    if run is None:
+        return _no_run()
+    onsite = ScheduledClass.objects.filter(run=run, room__building__isnull=False)
+    total = onsite.count()
+    if total == 0:
+        return CheckResult("Перемещения между площадками", WARNING,
+                           "В запуске нет очных пар с аудиторией из корпуса.")
+    dupes = (onsite.values("slot", "event__group")
+             .annotate(n=Count("id")).filter(n__gt=1).count())
+    if dupes:
+        return CheckResult("Перемещения между площадками", ERROR,
+                           f"{dupes} коллизий: группа занята двумя очными парами "
+                           "в одном слоте (разные корпуса — переход невозможен).")
+    buildings = onsite.values_list("room__building__name", flat=True).distinct().count()
+    return CheckResult("Перемещения между площадками", OK,
+                       f"Очных пар: {total}, корпусов задействовано: {buildings}. "
+                       "Каждый корпус — отдельная площадка (~час езды между ними), "
+                       "объединение корпусов в площадки запрещено проверкой «Корпуса и площадки».")
+
+
 ALL_CHECKS = (
     check_semesters,
     check_resources,
+    check_buildings,
     check_dpo_groups,
     check_event_integrity,
     check_last_run,
@@ -249,6 +311,7 @@ ALL_CHECKS = (
     check_room_conflicts,
     check_group_conflicts,
     check_teacher_conflicts,
+    check_campus_trips,
 )
 
 

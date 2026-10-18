@@ -10,7 +10,14 @@ from django.db import models
 from django.shortcuts import render
 from django.views.decorators.http import require_POST
 
-from schedule_generator.models import GenerationRun, Group, Module, Semester, Student
+from schedule_generator.models import (
+    GenerationRun,
+    Group,
+    Module,
+    ScheduledClass,
+    Semester,
+    Student,
+)
 from schedule_generator.services import GenerationError, run_generation
 
 from .checks import run_all_checks
@@ -19,6 +26,7 @@ from .student_view import (
     build_student_schedule,
     get_latest_run,
     pick_representative_students,
+    room_display,
 )
 
 
@@ -83,6 +91,16 @@ def _student_schedules_context(run_id: int | None = None,
     schedules = [build_student_schedule(run, s) for s in students]
     runs = [(r.pk, f"Run #{r.pk} · {r.semester} · {r.status}")
             for r in GenerationRun.objects.order_by("-created_at")[:10]]
+    # Корпуса, в которых реально проходят пары этого запуска: каждый корпус —
+    # отдельная площадка (далеко от других), поэтому сводка идёт по корпусам.
+    building_rows = []
+    for bld_count in (ScheduledClass.objects
+                      .filter(run=run, room__building__isnull=False)
+                      .values("room__building__name")
+                      .annotate(pairs=models.Count("id"))
+                      .order_by("room__building__name")):
+        building_rows.append({"name": bld_count["room__building__name"],
+                              "pairs": bld_count["pairs"]})
     return {
         "day_names": DAY_NAMES,
         "student_schedules": schedules,
@@ -95,6 +113,7 @@ def _student_schedules_context(run_id: int | None = None,
         "group_sort": group_sort,
         "group_direction": direction,
         "group_students_total": sum(g["count"] for g in group_rows),
+        "run_buildings": building_rows,
     }
 
 
@@ -209,10 +228,10 @@ def _last_run_dump() -> str:
                 "type": sc.event.lesson_type,
                 "group": sc.event.group.name if sc.event.group_id else None,
                 "dpo_group": sc.event.group.is_dpo if sc.event.group_id else None,
-                "room": sc.room.name if sc.room_id else None,
+                "room": room_display(sc, online_label="онлайн"),
             }
             for sc in run.scheduled_classes.select_related(
-                "slot", "room", "event__subject", "event__group")
+                "slot", "room__building", "event__subject", "event__group")
         ],
         "issues": [{"level": i.level, "text": i.text} for i in run.issues.all()],
     }
