@@ -1,3 +1,4 @@
+--- dev_dashboard/templates/dev_dashboard/dashboard.html (原始)
 <!DOCTYPE html>
 <html lang="ru">
 <head>
@@ -98,6 +99,224 @@
   <span style="background:#ede7f6;">онлайн (лекция/ДПО)</span>
   <span style="background:#fff8e1; outline:2px solid #f9a825;">ПД (группа по проекту)</span>
 </div>
+{% for s in student_schedules %}
+<div class="student-card">
+  <h3>{{ s.student.full_name }}</h3>
+  <div class="meta">
+    Группа: <b>{{ s.student.group.name }}{% if s.student.group.is_dpo %} (ДПО){% endif %}</b>
+    · Пар в неделю: {{ s.total_pairs }}
+    · Запуск: Run #{{ student_run.pk }} ({{ student_run.status }})
+  </div>
+  <table class="weekgrid">
+    <tr>
+      <th style="width:4rem;">Пара</th>
+      {% for day in s.day_names %}<th>{{ day }}</th>{% endfor %}
+    </tr>
+    {% for row in s.grid %}
+    <tr>
+      <th>{{ row.lesson }}-я</th>
+      {% for cell in row.cells %}
+        {% if cell %}
+        <td class="lesson{% if cell.lessons.0.is_online %} online{% endif %}{% if cell.lessons.0.highlight %} pd{% endif %}">
+          {% for l in cell.lessons %}
+          <div class="lesson-item{% if not forloop.first %} sep{% endif %}">
+            <b>{{ l.subject }}</b>
+            {{ l.lesson_type_display }} · {{ l.teacher }}
+            {% if l.is_online %}<span class="tag-online">онлайн</span>{% else %}<span class="tag-room">{{ l.room }}</span>{% endif %}
+          </div>
+          {% endfor %}
+        </td>
+        {% else %}
+        <td class="empty"></td>
+        {% endif %}
+      {% endfor %}
+    </tr>
+    {% empty %}
+    <tr><td colspan="{{ s.num_days|add:1 }}">Нет слотов шаблона недели для этого семестра.</td></tr>
+    {% endfor %}
+  </table>
+  {% if s.pe_note %}<div class="pe-note">{{ s.pe_note }}</div>{% endif %}
+</div>
+{% endfor %}
+{% else %}
+<p>Запусков генерации ещё не было — сначала нажмите «Запустить генерацию» выше.</p>
+{% endif %}
+
+<details>
+  <summary><h2 style="display:inline">Результат последнего запуска (JSON)</h2></summary>
+  <pre>{{ last_run_json }}</pre>
+</details>
+</body>
+</html>
+
+
++++ dev_dashboard/templates/dev_dashboard/dashboard.html (修改后)
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Dev-панель проверки расписания</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 2rem auto; max-width: 960px; padding: 0 1rem; color: #1c1c1c; }
+  h1 small { color: #b35a00; font-size: .6em; }
+  .banner { background: #fff3e0; border: 1px solid #ffb74d; padding: .5rem 1rem; border-radius: 6px; margin-bottom: 1rem; }
+  table.checks { border-collapse: collapse; width: 100%; margin-bottom: 1.5rem; }
+  table.checks td { border-bottom: 1px solid #eee; padding: .45rem .5rem; vertical-align: top; }
+  .badge { display: inline-block; min-width: 4.5rem; text-align: center; border-radius: 4px; padding: .15rem .5rem; font-weight: 600; font-size: .85rem; color: #fff; }
+  .ok { background: #2e7d32; } .warning { background: #ef6c00; } .error { background: #c62828; }
+  fieldset { border: 1px solid #ccc; border-radius: 6px; margin-bottom: 1.5rem; padding: 1rem; }
+  fieldset p { margin: .3rem 0; }
+  button { background: #1565c0; color: #fff; border: 0; border-radius: 6px; padding: .5rem 1.2rem; font-size: 1rem; cursor: pointer; }
+  .messages li { margin: .2rem 0; }
+  .msg-success { color: #2e7d32; } .msg-warning { color: #ef6c00; } .msg-error { color: #c62828; }
+  pre { background: #f5f5f5; border-radius: 6px; padding: 1rem; overflow: auto; max-height: 400px; font-size: .8rem; }
+  details summary { cursor: pointer; margin-bottom: .5rem; }
+  table.runs td, table.runs th { border-bottom: 1px solid #eee; padding: .3rem .5rem; text-align: left; font-size: .9rem; }
+  /* Расписание глазами студента */
+  select.run-picker { padding: .3rem .5rem; margin-bottom: 1rem; font-size: .95rem; }
+  .picker-row { display: flex; gap: 1.5rem; flex-wrap: wrap; align-items: center; }
+  .student-card { border: 1px solid #ddd; border-radius: 8px; padding: 1rem; margin-bottom: 1.5rem; }
+  .student-card h3 { margin: 0 0 .2rem; font-size: 1.05rem; }
+  .student-card .meta { color: #555; font-size: .85rem; margin-bottom: .6rem; }
+  .student-card .pe-note { color: #8a6d3b; font-size: .8rem; margin-top: .4rem; }
+  table.weekgrid { border-collapse: collapse; width: 100%; table-layout: fixed; }
+  table.weekgrid th, table.weekgrid td { border: 1px solid #e0e0e0; padding: .3rem; vertical-align: top; font-size: .78rem; }
+  table.weekgrid th { background: #fafafa; text-align: center; }
+  td.lesson { background: #e3f2fd; border-radius: 4px; }
+  td.lesson.online { background: #ede7f6; }
+  td.lesson.pd { background: #fff8e1; outline: 2px solid #f9a825; }
+  td.lesson b { display: block; font-size: .82rem; }
+  td.empty { background: #fcfcfc; }
+  .legend { font-size: .8rem; color: #555; margin: .5rem 0 1rem; }
+  .legend span { display: inline-block; padding: .1rem .5rem; border-radius: 4px; margin-right: .5rem; }
+  /* Группы и выбор студента */
+  table.groups { border-collapse: collapse; width: 100%; margin-bottom: 1.5rem; }
+  table.groups th, table.groups td { border-bottom: 1px solid #eee; padding: .35rem .5rem; text-align: left; font-size: .9rem; }
+  table.groups th a { text-decoration: none; color: #1565c0; }
+  table.groups th a.active { font-weight: 700; }
+  .sort-arrow { font-size: .8em; }
+  details.group-students { margin: 0; }
+  details.group-students summary { cursor: pointer; color: #1565c0; font-size: .85rem; }
+  .chip { display: inline-block; background: #e8eaf6; border-radius: 12px; padding: .1rem .6rem; margin: .15rem; font-size: .8rem; color: #1a237e; text-decoration: none; }
+  .chip.selected { background: #1565c0; color: #fff; font-weight: 600; }
+  .reset-link { font-size: .85rem; }
+</style>
+</head>
+<body>
+<h1>Dev-панель <small>(только режим разработки)</small></h1>
+<div class="banner">Страница доступна исключительно при <code>DEBUG=True</code>.
+Использована для ручной проверки корректности проекта: данные → генерация → инварианты.</div>
+
+{% if messages %}
+<ul class="messages">
+  {% for m in messages %}<li class="msg-{{ m.tags }}">{{ m }}</li>{% endfor %}
+</ul>
+{% endif %}
+
+<fieldset>
+  <legend>Запуск генерации (сервисный слой, тот же, что у API)</legend>
+  <form method="post" action="{% url 'dev_dashboard:generate' %}">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button type="submit">Запустить генерацию</button>
+  </form>
+</fieldset>
+
+<h2>Автопроверки</h2>
+<table class="checks">
+  {% for c in checks %}
+  <tr>
+    <td><b>{{ c.name }}</b></td>
+    <td><span class="badge {{ c.status }}">{{ c.status }}</span></td>
+    <td>{{ c.message }}</td>
+  </tr>
+  {% endfor %}
+</table>
+
+<h2>История запусков</h2>
+<table class="runs">
+  <tr><th>#</th><th>Семестр</th><th>Модуль</th><th>Статус</th><th>Пар</th><th>Проблем</th><th>Время, с</th></tr>
+  {% for r in runs %}
+  <tr>
+    <td>{{ r.pk }}</td><td>{{ r.semester }}</td><td>{{ r.module|default:"—" }}</td>
+    <td>{{ r.status }}</td><td>{{ r.scheduled_classes.count }}</td>
+    <td>{{ r.issues.count }}</td><td>{{ r.solve_time_seconds|floatformat:2|default:"—" }}</td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="7">Запусков ещё не было.</td></tr>
+  {% endfor %}
+</table>
+
+<h2>Расписание глазами студентов</h2>
+{% if student_run %}
+<form method="get" action="">
+  {% if selected_student_id %}<input type="hidden" name="student" value="{{ selected_student_id }}">{% endif %}
+  <label>Запуск:
+    <select class="run-picker" name="run" onchange="this.form.submit()">
+      {% for pk, label in student_runs %}
+      <option value="{{ pk }}" {% if pk == selected_run_id %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+</form>
+<div class="legend">
+  <span style="background:#e3f2fd;">очное занятие</span>
+  <span style="background:#ede7f6;">онлайн (лекция/ДПО)</span>
+  <span style="background:#fff8e1; outline:2px solid #f9a825;">ПД (группа по проекту)</span>
+</div>
+
+{# ---- выбор конкретного студента ---- #}
+<form method="get" action="" class="picker-row">
+  {% if selected_group_id %}<input type="hidden" name="group" value="{{ selected_group_id }}">{% endif %}
+  <label>Студент:
+    <select class="run-picker" name="student" onchange="this.form.submit()">
+      <option value="">— все представители —</option>
+      {% for opt in student_options %}
+        {% if opt.value %}
+        <option value="{{ opt.value }}" {% if opt.value == selected_student_id %}selected{% endif %}>{{ opt.label }}</option>
+        {% else %}
+        <option disabled>────────── {{ opt.label }} ──────────</option>
+        {% endif %}
+      {% endfor %}
+    </select>
+  </label>
+  {% if selected_student_id %}
+  <a class="reset-link" href="?run={{ selected_run_id }}">сбросить выбор</a>
+  {% endif %}
+</form>
+
+{# ---- список групп с сортировкой: клик по названию студента открывает его расписание ---- #}
+<h3>Группы семестра ({{ group_rows|length }} групп, {{ group_students_total }} студентов)</h3>
+<table class="groups">
+  <tr>
+    <th><a href="?run={{ selected_run_id }}&sort=name&dir={% if group_sort == 'name' and group_direction == 'asc' %}desc{% else %}asc{% endif %}"
+           class="{% if group_sort == 'name' %}active{% endif %}">Группа
+      {% if group_sort == 'name' %}<span class="sort-arrow">{% if group_direction == 'asc' %}▲{% else %}▼{% endif %}</span>{% endif %}</a></th>
+    <th><a href="?run={{ selected_run_id }}&sort=students&dir={% if group_sort == 'students' and group_direction == 'asc' %}desc{% else %}asc{% endif %}"
+           class="{% if group_sort == 'students' %}active{% endif %}">Студентов
+      {% if group_sort == 'students' %}<span class="sort-arrow">{% if group_direction == 'asc' %}▲{% else %}▼{% endif %}</span>{% endif %}</a></th>
+    <th>Студенты</th>
+  </tr>
+  {% for row in group_rows %}
+  <tr>
+    <td><b><a href="?run={{ selected_run_id }}&group={{ row.group.pk }}&sort={{ group_sort }}&dir={{ group_direction }}">{{ row.group.name }}</a></b>
+        {% if row.group.is_dpo %}<i>(ДПО)</i>{% endif %}
+        {% if row.group.is_first_year_first_semester %}<i>(перваки)</i>{% endif %}</td>
+    <td>{{ row.count }}</td>
+    <td>
+      <details class="group-students">
+        <summary>показать студентов</summary>
+        {% for st in row.group.students.all|slice:":40" %}
+        <a class="chip{% if st.pk == selected_student_id %} selected{% endif %}"
+           href="?run={{ selected_run_id }}&student={{ st.pk }}">{{ st.full_name }}</a>
+        {% endfor %}
+        {% if row.count > 40 %}<span style="font-size:.8rem;color:#777;">… ещё {{ row.count|add:"-40" }}</span>{% endif %}
+      </details>
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+
 {% for s in student_schedules %}
 <div class="student-card">
   <h3>{{ s.student.full_name }}</h3>
