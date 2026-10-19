@@ -30,7 +30,9 @@ class PlanningTests(TestCase):
         self.module = Module.objects.create(semester=self.semester, number=1, start_date=date(2026, 9, 1), end_date=date(2026, 10, 31), teaching_weeks=9)
         self.other_module = Module.objects.create(semester=self.semester, number=2, start_date=date(2026, 11, 1), end_date=date(2026, 12, 31), teaching_weeks=9)
         self.pattern = WeekPattern.objects.create(semester=self.semester)
-        self.slot = TimeSlot.objects.create(week_pattern=self.pattern, day_of_week=0, lesson_number=1)
+        # вт: пн/ср зарезервированы под ПД, обычные пары там не планируются
+        # (см. services/day_rules.py)
+        self.slot = TimeSlot.objects.create(week_pattern=self.pattern, day_of_week=1, lesson_number=1)
         self.subject = Subject.objects.create(name='Math')
         self.group = Group.objects.create(name='261-101')
         self.room = Room.objects.create(name='R', capacity=30)
@@ -162,10 +164,10 @@ class PlanningTests(TestCase):
         second = Group.objects.create(name='ДПО-2', is_dpo=True)
         first_event = self.dpo_event(first, Format.ONSITE)
         second_event = self.dpo_event(second, Format.ONSITE)
-        # вторая аудитория и второй слот: иначе решателю физически негде
+        # вторая аудитория и второй слот (чт): иначе решателю физически негде
         # поставить вторую очную пару (одна аудитория/один слот -> PARTIAL)
         Room.objects.create(name='R2', capacity=30)
-        TimeSlot.objects.create(week_pattern=self.pattern, day_of_week=1, lesson_number=1)
+        TimeSlot.objects.create(week_pattern=self.pattern, day_of_week=3, lesson_number=1)
         result = run_generation(semester=self.semester, time_limit_seconds=2)
         self.assertEqual(result.status, 'SOLVED')
         classes = ScheduledClass.objects.filter(run_id=result.run_id)
