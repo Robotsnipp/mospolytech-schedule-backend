@@ -58,10 +58,10 @@ class Building(models.Model):
 class Room(models.Model):
     """Аудитория внутри корпуса. capacity ограничивает только очные занятия;
     онлайн-занятия (лекции, часть внеучебки) проходят без аудитории.
-
-    Название — то, что написано на двери: «Г-251», «251», «Л-201».
     """
 
+    name = models.CharField("Название", max_length=50, unique=True,
+                             help_text="То, что написано на двери: «Г-251», «251», «Л-201».")
     building = models.ForeignKey(Building, on_delete=models.PROTECT, null=True, blank=True,
                                  related_name="rooms",
                                  help_text="Корпус, в котором находится аудитория.")
