@@ -88,3 +88,37 @@ class PatternScheduleFilterSerializer(ScheduleFilterSerializer):
 
     week_pattern = serializers.PrimaryKeyRelatedField(
         queryset=WeekPattern.objects.all(), required=False, allow_null=True)
+
+
+# ---------------------------------------------------------------------------
+# Параметры фильтрации эндпоинтов фронтенда (api/frontend.py)
+# ---------------------------------------------------------------------------
+
+class FrontendGridFilterSerializer(serializers.Serializer):
+    """Query-параметры /frontend/grid*/: носитель + период расписания."""
+
+    HOLDER_TYPES = ("group", "stream", "teacher", "student", "project")
+
+    holder_type = serializers.ChoiceField(choices=HOLDER_TYPES)
+    holder_id = serializers.IntegerField(min_value=1)
+    semester = serializers.PrimaryKeyRelatedField(queryset=Semester.objects.all())
+    module = serializers.PrimaryKeyRelatedField(
+        queryset=Module.objects.all(), required=False, allow_null=True)
+    run = serializers.IntegerField(required=False,
+                                  help_text="ID запуска; по умолчанию — "
+                                            "последний SOLVED/PARTIAL периода.")
+    pattern = serializers.PrimaryKeyRelatedField(
+        queryset=WeekPattern.objects.all(), required=False, allow_null=True,
+        source="week_pattern")
+
+    def validate(self, attrs):
+        module = attrs.get("module")
+        semester = attrs["semester"]
+        if module is not None and module.semester_id != semester.id:
+            raise serializers.ValidationError(
+                {"module": "Модуль относится к другому семестру."})
+        pattern = attrs.get("week_pattern")
+        if pattern is not None and pattern.semester_id != semester.id:
+            raise serializers.ValidationError(
+                {"pattern": "Шаблон недели относится к другому семестру."})
+        return attrs

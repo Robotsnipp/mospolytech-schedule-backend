@@ -11,12 +11,26 @@
 - просмотр расписания: schedule/groups|streams|teachers|students;
 - POST /api/schedule/generate/ — запуск решателя (action viewset'а
   GenerateViewSet; url_path="generate" даёт ровно "/generate/", без повтора
-  сегмента — совместимость с прежним APIView-маршрутом).
+  сегмента — совместимость с прежним APIView-маршрутом);
+- API для фронтенда (агрегированные ответы под экраны, тег Frontend):
+  frontend/bootstrap/, frontend/weeks/, frontend/grid/holders/,
+  frontend/grid/, frontend/grid/calendar/, frontend/day/,
+  frontend/me/students/<id>/, frontend/me/teachers/<id>/.
 """
 
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
+from .api.frontend import (
+    BootstrapViewSet,
+    CalendarGridViewSet,
+    DayScheduleViewSet,
+    GridHolderViewSet,
+    PeriodWeekViewSet,
+    StudentMeViewSet,
+    TeacherMeViewSet,
+    WeekGridViewSet,
+)
 from .api.views import (
     BuildingViewSet,
     CurriculumEntryViewSet,
@@ -86,6 +100,22 @@ router.register("schedule/students", StudentScheduleViewSet, basename="schedule-
 # ровно /api/schedule/generate/ (совместимость с прежним APIView-маршрутом).
 router.register("", GenerateViewSet, basename="schedule-generate")
 
+# --- API для фронтенда (агрегированные ответы под экраны) --------------------
+frontend_router = DefaultRouter()
+frontend_router.register("bootstrap", BootstrapViewSet, basename="fe-bootstrap")
+frontend_router.register("weeks", PeriodWeekViewSet, basename="fe-weeks")
+frontend_router.register("grid/holders", GridHolderViewSet,
+                         basename="fe-grid-holders")
+frontend_router.register("grid/calendar", CalendarGridViewSet,
+                         basename="fe-grid-calendar")
+frontend_router.register("grid", WeekGridViewSet, basename="fe-grid")
+frontend_router.register("day", DayScheduleViewSet, basename="fe-day")
+frontend_router.register("me/students", StudentMeViewSet,
+                         basename="fe-me-student")
+frontend_router.register("me/teachers", TeacherMeViewSet,
+                         basename="fe-me-teacher")
+
 urlpatterns = [
     path("", include(router.urls)),
+    path("frontend/", include(frontend_router.urls)),
 ]
