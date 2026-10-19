@@ -73,7 +73,8 @@ def run_generation(*, semester, week_pattern=None, time_limit_seconds=30,
         # --- 3. данные ---
         slots = list(TimeSlot.objects.filter(week_pattern=week_pattern)
                      .order_by("day_of_week", "lesson_number"))
-        rooms = list(Room.objects.filter(is_active=True))
+        rooms = list(Room.objects.filter(is_active=True)
+                     .select_related("building", "building__location"))  # правило локаций
         events = LessonEvent.objects.filter(semester=semester)
         if module is not None:
             from django.db.models import Q

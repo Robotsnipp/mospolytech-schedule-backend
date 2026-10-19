@@ -5,7 +5,7 @@ from django.db import IntegrityError, transaction
 from django.test import TestCase
 
 from schedule_generator.api.serializers import GenerateRequestSerializer
-from schedule_generator.enums import LessonType
+from schedule_generator.enums import Format, LessonType
 from schedule_generator.models import (
     Curriculum,
     CurriculumEntry,
@@ -16,6 +16,7 @@ from schedule_generator.models import (
     Room,
     ScheduledClass,
     Semester,
+    Student,
     Subject,
     TimeSlot,
     WeekPattern,
@@ -29,9 +30,11 @@ class PlanningTests(TestCase):
         self.module = Module.objects.create(semester=self.semester, number=1, start_date=date(2026, 9, 1), end_date=date(2026, 10, 31), teaching_weeks=9)
         self.other_module = Module.objects.create(semester=self.semester, number=2, start_date=date(2026, 11, 1), end_date=date(2026, 12, 31), teaching_weeks=9)
         self.pattern = WeekPattern.objects.create(semester=self.semester)
-        self.slot = TimeSlot.objects.create(week_pattern=self.pattern, day_of_week=0, lesson_number=1)
+        # вт: пн/ср зарезервированы под ПД, обычные пары там не планируются
+        # (см. services/day_rules.py)
+        self.slot = TimeSlot.objects.create(week_pattern=self.pattern, day_of_week=1, lesson_number=1)
         self.subject = Subject.objects.create(name='Math')
-        self.group = Group.objects.create(name='G')
+        self.group = Group.objects.create(name='261-101')
         self.room = Room.objects.create(name='R', capacity=30)
 
     def event(self, module=None):
@@ -80,6 +83,28 @@ class PlanningTests(TestCase):
         with self.assertRaises(IntegrityError), transaction.atomic():
             Module.objects.create(semester=self.semester, number=3, start_date=date(2026, 12, 1), end_date=date(2026, 11, 1), teaching_weeks=1)
 
+    def test_group_name_formats_regular_and_dpo(self):
+        """Обычные группы — формат «241-334», группы ДПО — свой формат «ДПО-...»."""
+        # обычная группа: валидный формат, год зачисления считается из названия
+        regular = Group(name='241-334')
+        regular.full_clean()
+        self.assertEqual(regular.admission_year, 2024)
+        # невалидное имя обычной группы отклоняется
+        with self.assertRaises(ValidationError):
+            Group(name='G').full_clean()
+        with self.assertRaises(ValidationError):
+            Group(name='2413345678').full_clean()
+        # группа ДПО: свой формат, год зачисления не выводится и не заполняется
+        dpo = Group(name='ДПО-2026-07', is_dpo=True)
+        dpo.full_clean()
+        self.assertIsNone(dpo.admission_year)
+        Group.objects.create(name='ДПО Python', is_dpo=True)
+        # обычному формату группа ДПО не следует, а ДПО-имени — обычная группа
+        with self.assertRaises(ValidationError):
+            Group(name='241-334', is_dpo=True).full_clean()
+        with self.assertRaises(ValidationError):
+            Group(name='Группа слушателей').full_clean()
+
     def test_curriculum_form_and_subject_validation(self):
         values = dict(name='Web', program_code='09.03.01', profile='Web', admission_year=2025, duration_months=48)
         plan = Curriculum.objects.create(**values, study_form='FULL_TIME')
@@ -93,3 +118,61 @@ class PlanningTests(TestCase):
         event.subject = Subject.objects.create(name='Other subject')
         with self.assertRaises(ValidationError):
             event.full_clean()
+
+    def dpo_event(self, group, lesson_format):
+        return LessonEvent.objects.create(
+            semester=self.semester, subject=self.subject, group=group,
+            lesson_type=LessonType.DPO, format=lesson_format, pairs_per_week=1,
+        )
+
+    def test_dpo_events_require_own_dpo_group(self):
+        """ДПО планируется только на отдельную группу ДПО."""
+        dpo_group = Group.objects.create(name='ДПО-Тест', is_dpo=True)
+        Student.objects.create(group=dpo_group, full_name='Слушатель')
+        self.dpo_event(dpo_group, Format.ONLINE).full_clean()
+        self.dpo_event(dpo_group, Format.ONSITE).full_clean()
+        # обычная учебная группа для ДПО не подходит
+        with self.assertRaises(ValidationError):
+            self.dpo_event(self.group, Format.ONLINE).full_clean()
+        # занятие другого типа на группу ДПО планировать нельзя
+        with self.assertRaises(ValidationError):
+            LessonEvent.objects.create(
+                semester=self.semester, subject=self.subject, group=dpo_group,
+                lesson_type=LessonType.PRACTICE,
+            ).full_clean()
+
+    def test_dpo_generation_online_and_onsite_for_separate_groups(self):
+        """Пары ДПО (онлайн и очные) планируются на отдельные группы ДПО
+        реальным решателем; очная пара занимает аудиторию, онлайн — нет."""
+        first = Group.objects.create(name='ДПО-1', is_dpo=True)
+        second = Group.objects.create(name='ДПО-2', is_dpo=True)
+        online_event = self.dpo_event(first, Format.ONLINE)
+        onsite_event = self.dpo_event(second, Format.ONSITE)
+        result = run_generation(semester=self.semester, time_limit_seconds=2)
+        self.assertEqual(result.status, 'SOLVED')
+        classes = ScheduledClass.objects.filter(run_id=result.run_id)
+        online_classes = [c for c in classes if c.event_id == online_event.id]
+        onsite_classes = [c for c in classes if c.event_id == onsite_event.id]
+        self.assertEqual(len(online_classes), 1)
+        self.assertEqual(len(onsite_classes), 1)
+        self.assertIsNone(online_classes[0].room_id)
+        self.assertEqual(onsite_classes[0].room_id, self.room.id)
+
+    def test_dpo_two_onsite_groups_do_not_share_room_slot(self):
+        """Две очные группы ДПО не могут занять одну аудиторию в одном слоте."""
+        first = Group.objects.create(name='ДПО-1', is_dpo=True)
+        second = Group.objects.create(name='ДПО-2', is_dpo=True)
+        first_event = self.dpo_event(first, Format.ONSITE)
+        second_event = self.dpo_event(second, Format.ONSITE)
+        # вторая аудитория и второй слот (чт): иначе решателю физически негде
+        # поставить вторую очную пару (одна аудитория/один слот -> PARTIAL)
+        Room.objects.create(name='R2', capacity=30)
+        TimeSlot.objects.create(week_pattern=self.pattern, day_of_week=3, lesson_number=1)
+        result = run_generation(semester=self.semester, time_limit_seconds=2)
+        self.assertEqual(result.status, 'SOLVED')
+        classes = ScheduledClass.objects.filter(run_id=result.run_id)
+        first_class = classes.get(event=first_event)
+        second_class = classes.get(event=second_event)
+        # инвариант решателя: в одном слоте аудитория занята не более чем одной парой
+        self.assertFalse(first_class.slot_id == second_class.slot_id
+                         and first_class.room_id == second_class.room_id)

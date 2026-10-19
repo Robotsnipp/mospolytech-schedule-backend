@@ -12,7 +12,6 @@ from django.contrib import admin
 
 from .models import (
     Building,
-    Campus,
     Curriculum,
     CurriculumEntry,
     GenerationIssue,
@@ -20,6 +19,7 @@ from .models import (
     Group,
     LectureStream,
     LessonEvent,
+    Location,
     Module,
     Project,
     ProjectEnrollment,
@@ -61,7 +61,9 @@ class TimeSlotAdmin(admin.ModelAdmin):
 
 @admin.register(Group)
 class GroupAdmin(admin.ModelAdmin):
-    list_display = ("name", "curriculum", "semester", "is_first_year_first_semester")
+    list_display = ("name", "admission_year", "curriculum", "semester",
+                    "is_first_year_first_semester", "is_dpo")
+    list_filter = ("is_dpo", "admission_year")
     search_fields = ("name",)
 
 
@@ -100,7 +102,25 @@ class SubjectAdmin(admin.ModelAdmin):
 
 @admin.register(Room)
 class RoomAdmin(admin.ModelAdmin):
-    list_display = ("name", "building", "capacity", "room_type", "is_active")
+    list_display = ("name", "location_name", "building", "capacity", "room_type", "is_active")
+    list_filter = ("building__location", "building", "is_active")
+
+    @admin.display(description="Локация", ordering="building__location__name")
+    def location_name(self, obj: Room) -> str:
+        """Локация через корпус (свойство Room.location)."""
+        loc = obj.location
+        return loc.name if loc is not None else "—"
+
+
+@admin.register(Location)
+class LocationAdmin(admin.ModelAdmin):
+    search_fields = ("name", "address")
+
+
+@admin.register(Building)
+class BuildingAdmin(admin.ModelAdmin):
+    list_display = ("name", "location")
+    list_filter = ("location",)
 
 
 @admin.register(LectureStream)
@@ -160,5 +180,3 @@ class ModuleAdmin(admin.ModelAdmin):
 
 
 admin.site.register(CurriculumEntry)
-admin.site.register(Campus)
-admin.site.register(Building)
