@@ -33,7 +33,7 @@
 ```sh
 SECRET_KEY=local-test-only DB_ENGINE=sqlite python manage.py migrate
 SECRET_KEY=local-test-only DB_ENGINE=sqlite python manage.py test schedule_generator
-SECRET_KEY=local-test-only DB_ENGINE=sqlite python manage.py generate_demo_schedule --time-limit 3
+SECRET_KEY=local-test-only DB_ENGINE=sqlite python manage.py generate_demo_schedule --time-limit 60
 ```
 
 Тесты проверяют реальный решатель, фильтрацию модуля, отключённые аудитории,
