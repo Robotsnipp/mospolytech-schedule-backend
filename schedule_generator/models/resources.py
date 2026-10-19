@@ -1,4 +1,4 @@
-"""Ресурсы для занятий: дисциплины, аудитории, лекционные потоки."""
+"""Ресурсы для занятий: дисциплины, корпуса/локации, аудитории, лекционные потоки."""
 
 from django.db import models
 
@@ -14,21 +14,21 @@ class Subject(models.Model):
         return self.name
 
 
-class Campus(models.Model):
-    """Кампус университета (площадка).
+class Location(models.Model):
+    """Учебная локация — адрес, где стоит один или несколько корпусов.
 
-    Примеры кампусов: Михалковская, Прянишникова, Большая Семёновская,
-    Павла Корчагина, Дубравная (Дубровский), Автозаводская.
-    Внутри кампуса могут быть корпуса (Building), а может и не быть —
-    тогда аудитории относятся к кампусу напрямую.
+    Кампусов и площадок у нас нет: есть корпуса на разных локациях, между
+    каждым час езды (поэтому и действует правило «один участник — одна
+    локация в слоте»). Примеры локаций: Михалковская, Прянишникова,
+    Большая Семёновская, Павла Корчагина, Дубровская, Автозаводская.
     """
 
-    name = models.CharField("Название кампуса", max_length=100, unique=True)
+    name = models.CharField("Локация", max_length=100, unique=True)
     address = models.CharField("Адрес", max_length=250, blank=True)
 
     class Meta:
-        verbose_name = "Кампус"
-        verbose_name_plural = "Кампусы"
+        verbose_name = "Локация"
+        verbose_name_plural = "Локации"
         ordering = ["name"]
 
     def __str__(self):
@@ -36,36 +36,35 @@ class Campus(models.Model):
 
 
 class Building(models.Model):
-    """Корпус внутри кампуса (необязательный уровень: у кампуса может не быть корпусов)."""
+    """Учебный корпус на конкретной локации.
 
-    campus = models.ForeignKey(Campus, on_delete=models.PROTECT, related_name="buildings")
+    Внутри корпуса аудитория может иметь своё деление (например, буквенные
+    блоки «Г» и цифровые «251») — это отражено в названии Room, отдельной
+    сущности для блоков нет.
+    """
+
+    location = models.ForeignKey(Location, on_delete=models.PROTECT, related_name="buildings")
     name = models.CharField("Корпус", max_length=100)
 
     class Meta:
         verbose_name = "Корпус"
         verbose_name_plural = "Корпуса"
-        constraints = [models.UniqueConstraint(fields=["campus", "name"], name="uniq_campus_building")]
+        constraints = [models.UniqueConstraint(fields=["location", "name"], name="uniq_location_building")]
 
     def __str__(self):
-        return f"{self.campus}: {self.name}"
+        return f"{self.location.name}: {self.name}"
 
 
 class Room(models.Model):
-    """Аудитория. capacity ограничивает только очные занятия;
+    """Аудитория внутри корпуса. capacity ограничивает только очные занятия;
     онлайн-занятия (лекции, часть внеучебки) проходят без аудитории.
 
-    Привязка к месту: building (если у кампуса есть корпуса) либо campus
-    напрямую (если деления на корпуса нет).
+    Название — то, что написано на двери: «Г-251», «251», «Л-201».
     """
 
-    name = models.CharField("Название", max_length=50, unique=True)
-    campus_ptr = models.ForeignKey(
-        Campus, on_delete=models.PROTECT, null=True, blank=True, related_name="rooms",
-        db_column="campus_id", verbose_name="Кампус",
-        help_text="Указывается напрямую, если у кампуса нет деления на корпуса. "
-                  "Свойство Room.campus возвращает кампус (через корпус или напрямую).",
-    )
-    building = models.ForeignKey(Building, on_delete=models.PROTECT, null=True, blank=True, related_name="rooms")
+    building = models.ForeignKey(Building, on_delete=models.PROTECT, null=True, blank=True,
+                                 related_name="rooms",
+                                 help_text="Корпус, в котором находится аудитория.")
     is_active = models.BooleanField("Доступна для генерации", default=True)
     room_type = models.CharField("Тип помещения", max_length=50, blank=True)
     equipment = models.TextField("Оборудование", blank=True)
@@ -80,28 +79,27 @@ class Room(models.Model):
         return self.name
 
     @property
-    def campus(self) -> Campus | None:
-        """Кампус, к которому относится аудитория (через корпус или напрямую)."""
+    def location(self) -> Location | None:
+        """Локация, к которой относится аудитория (через корпус)."""
         if self.building_id:
-            return self.building.campus
-        return self.campus_ptr
+            return self.building.location
+        return None
 
     @property
     def location_label(self) -> str:
-        """Человекочитаемое место: «Кампус · Корпус · Аудитория» (без пустых уровней)."""
+        """Человекочитаемое место: «Локация · корпус X · Аудитория» (без пустых уровней)."""
         parts = []
-        c = self.campus
-        if c is not None:
-            parts.append(c.name)
+        if (loc := self.location) is not None:
+            parts.append(loc.name)
         if self.building_id:
             parts.append(f"к. {self.building.name}")
         parts.append(self.name)
         return " · ".join(parts)
 
-    def campus_label_for_ui(self) -> str:
-        """Название кампуса для интерфейса; если кампус не указан — пустая строка."""
-        c = self.campus
-        return c.name if c is not None else ""
+    def location_name_for_ui(self) -> str:
+        """Название локации для интерфейса; если локация не указана — пустая строка."""
+        loc = self.location
+        return loc.name if loc is not None else ""
 
 
 class LectureStream(models.Model):
