@@ -53,10 +53,21 @@ from ..models import (
     WeekPattern,
 )
 from ..services import GenerationError, run_generation
+from ..services.replan import ReplanError, replan_after_disruption
+from ..services.rooms import free_rooms, slot_at, university_now
+from ..services.run_report import build_wellbeing_report
+from ..services.schedule_queries import (
+    group_holder_filter,
+    scheduled_classes_for,
+    student_holder_filter,
+)
+from ..services.social import common_free_slots
 from .serializers import (
     BuildingSerializer,
+    CommonFreeSlotsFilterSerializer,
     CurriculumEntrySerializer,
     CurriculumSerializer,
+    FreeRoomsFilterSerializer,
     GenerateRequestSerializer,
     GenerationIssueSerializer,
     GenerationRunListSerializer,
@@ -69,6 +80,8 @@ from .serializers import (
     PatternScheduleFilterSerializer,
     ProjectEnrollmentSerializer,
     ProjectSerializer,
+    ReplanRequestSerializer,
+    ReplanResultSerializer,
     RoomSerializer,
     ScheduledClassSerializer,
     SemesterSerializer,
@@ -86,36 +99,6 @@ MODULE_PARAM = OpenApiParameter(
 RUN_PARAM = OpenApiParameter(
     "run", int, required=False,
     description="ID запуска генерации; по умолчанию — последний завершённый запуск периода.")
-
-
-def _resolve_run(semester, module=None, run_id=None):
-    """Находит запуск, чьи пары показать: явный run или последний SOLVED/PARTIAL."""
-    qs = GenerationRun.objects.filter(semester=semester)
-    if module is not None:
-        qs = qs.filter(module=module)
-    else:
-        qs = qs.filter(module__isnull=True)
-    if run_id is not None:
-        return qs.filter(pk=run_id).first()
-    return (qs.filter(status__in=["SOLVED", "PARTIAL"])
-            .order_by("-created_at").first())
-
-
-def _scheduled_classes_for(semester, holder_filter, module=None, run_id=None,
-                           week_pattern_id=None):
-    """Пары последнего успешного запуска периода, отфильтрованные по носителю."""
-    run = _resolve_run(semester, module, run_id)
-    if run is None:
-        return ScheduledClass.objects.none()
-    qs = (ScheduledClass.objects
-          .filter(run=run)
-          .filter(holder_filter)
-          .select_related("slot", "room", "event", "event__subject",
-                          "event__group", "event__stream", "event__project",
-                          "event__teacher"))
-    if week_pattern_id is not None:
-        qs = qs.filter(slot__week_pattern_id=week_pattern_id)
-    return qs
 
 
 class CrudViewSet(viewsets.ModelViewSet):
@@ -681,6 +664,16 @@ class GenerationRunViewSet(viewsets.ReadOnlyModelViewSet):
         return Response(ScheduledClassSerializer(classes, many=True).data)
 
     @extend_schema(
+        summary="Усталость и окна групп по запуску", tags=["Генерация"],
+        description="Индекс усталости по группам и дням (формула — "
+                    "docs/SCHEDULING_RULES.md), окна и дни выше комфортного уровня. "
+                    "Пары ПД в отчёт не входят.",
+    )
+    @action(detail=True, methods=["get"], url_path="wellbeing")
+    def wellbeing(self, request, pk=None):
+        return Response(build_wellbeing_report(self.get_object()))
+
+    @extend_schema(
         summary="Проблемы конкретного запуска", tags=["Генерация"],
         responses=GenerationIssueSerializer(many=True),
     )
@@ -736,7 +729,7 @@ class ScheduleReadViewSet(viewsets.ViewSet):
         serializer = self._filter_serializer()
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
-        classes = _scheduled_classes_for(
+        classes = scheduled_classes_for(
             semester=data["semester"],
             holder_filter=holder_filter,
             module=data.get("module"),
@@ -777,8 +770,7 @@ class GroupScheduleViewSet(ScheduleReadViewSet):
         return self._list_schedule(Q())
 
     def retrieve(self, request, pk=None):
-        return self._list_schedule(Q(event__group_id=pk) |
-                                   Q(event__stream__groups_id=pk))
+        return self._list_schedule(group_holder_filter(pk))
 
 
 @extend_schema_view(
@@ -834,11 +826,79 @@ class StudentScheduleViewSet(ScheduleReadViewSet):
         if student is None:
             return Response({"detail": "Студент не найден."},
                             status=status.HTTP_404_NOT_FOUND)
-        holder_filter = (Q(event__group_id=student.group_id) |
-                         Q(event__stream__groups_id=student.group_id))
-        if student.project_choice_id:
-            holder_filter |= Q(event__project_id=student.project_choice.project_id)
+        holder_filter = student_holder_filter(student)
         return self._list_schedule(holder_filter)
+
+
+@extend_schema_view(
+    list=extend_schema(
+        summary="Общие окна студентов", tags=["Расписание"],
+        description="Слоты недели, в которые свободны все перечисленные студенты "
+                    "(их группы, потоковые лекции и ПД).",
+        parameters=[SEMESTER_PARAM, MODULE_PARAM, RUN_PARAM,
+                    OpenApiParameter("students", str, description="ID студентов через запятую."),
+                    OpenApiParameter("week_pattern", int, required=False)],
+        responses=TimeSlotSerializer(many=True)),
+)
+class CommonFreeSlotsViewSet(ScheduleReadViewSet):
+    """GET /api/schedule/schedule/common-free-slots/."""
+
+    def list(self, request):
+        serializer = CommonFreeSlotsFilterSerializer(data=request.query_params)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        slots = common_free_slots(
+            semester=data["semester"], students=data["students"],
+            module=data.get("module"), run_id=data.get("run"),
+            week_pattern=data.get("week_pattern"))
+        return Response(TimeSlotSerializer(slots, many=True).data)
+
+
+@extend_schema_view(
+    list=extend_schema(
+        summary="Свободные аудитории", tags=["Расписание"],
+        description="Активные аудитории, не занятые по расписанию выбранного запуска "
+                    "в заданный слот. Момент: day_of_week + lesson_number, либо at, "
+                    "либо текущее время университета (нужны времена пар в слотах).",
+        parameters=[SEMESTER_PARAM, MODULE_PARAM, RUN_PARAM,
+                    OpenApiParameter("week_pattern", int, required=False),
+                    OpenApiParameter("day_of_week", int, required=False),
+                    OpenApiParameter("lesson_number", int, required=False),
+                    OpenApiParameter("at", str, required=False,
+                                     description="ISO-время, например 2026-10-20T11:00."),
+                    OpenApiParameter("min_capacity", int, required=False),
+                    OpenApiParameter("location", int, required=False)]),
+)
+class FreeRoomsViewSet(ScheduleReadViewSet):
+    """GET /api/schedule/schedule/free-rooms/."""
+
+    def list(self, request):
+        serializer = FreeRoomsFilterSerializer(data=request.query_params)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        semester = data["semester"]
+        week_pattern = data.get("week_pattern") or semester.week_patterns.order_by("id").first()
+        if week_pattern is None:
+            return Response({"detail": "У семестра нет шаблона недели."},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        if "day_of_week" in data:
+            slot = week_pattern.slots.filter(day_of_week=data["day_of_week"],
+                                             lesson_number=data["lesson_number"]).first()
+            if slot is None:
+                return Response({"detail": "В шаблоне недели нет такого слота."},
+                                status=status.HTTP_400_BAD_REQUEST)
+        else:
+            slot = slot_at(week_pattern, data.get("at") or university_now())
+            if slot is None:
+                return Response({"slot": None, "rooms": [],
+                                 "detail": "В это время пара не идёт или у слотов не задано время."})
+
+        rooms = free_rooms(
+            semester=semester, slot=slot, module=data.get("module"), run_id=data.get("run"),
+            min_capacity=data.get("min_capacity"), location_id=data.get("location"))
+        return Response({"slot": TimeSlotSerializer(slot).data,
+                         "rooms": RoomSerializer(rooms, many=True).data})
 
 
 # ---------------------------------------------------------------------------
@@ -884,3 +944,38 @@ class GenerateViewSet(viewsets.ViewSet):
         run = GenerationRun.objects.get(pk=outcome.run_id)
         return Response(GenerationRunSerializer(run).data,
                         status=status.HTTP_201_CREATED)
+
+
+class ReplanViewSet(viewsets.ViewSet):
+    """Перепланирование после сбоя: POST /api/schedule/replan/.
+
+    Строит новый запуск, где пары, не затронутые сбоем, остаются на месте.
+    Права по умолчанию (администратор): запрос создаёт запуск в истории.
+    """
+
+    @extend_schema(
+        summary="Перестроить расписание после сбоя",
+        description="Преподаватель недоступен в некоторые дни либо аудитория закрыта. "
+                    "Возвращает новый запуск и список изменений; исходный запуск не меняется.",
+        tags=["Генерация"],
+        request=ReplanRequestSerializer,
+        responses={status.HTTP_201_CREATED: ReplanResultSerializer},
+    )
+    def create(self, request):
+        serializer = ReplanRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        try:
+            outcome = replan_after_disruption(
+                run=data["run"], teacher=data.get("teacher"),
+                unavailable_days=data.get("unavailable_days"), room=data.get("room"),
+                time_limit_seconds=data["time_limit_seconds"], seed=data["seed"])
+        except ReplanError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(ReplanResultSerializer({
+            "run": outcome.run_id, "status": outcome.status,
+            "affected_count": outcome.affected_count,
+            "unchanged_count": outcome.unchanged_count,
+            "affected_students": outcome.affected_students,
+            "changes": outcome.changes,
+        }).data, status=status.HTTP_201_CREATED)

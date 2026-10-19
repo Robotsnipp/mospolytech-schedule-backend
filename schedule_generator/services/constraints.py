@@ -18,6 +18,7 @@ from collections import defaultdict
 from ortools.sat.python import cp_model
 
 from ..enums import Format
+from .config import TRAVEL_BUFFER_SLOTS
 from .dto import EventSpec
 
 
@@ -100,9 +101,17 @@ def add_day_restrictions(model: cp_model.CpModel, specs: list[EventSpec],
 def add_location_consistency(model: cp_model.CpModel, specs: list[EventSpec],
                               slot_ids: list[int], pair_placement_vars: dict,
                               onsite_room_choice_vars: dict,
-                              location_id_by_room_id: dict[int, int]) -> None:
+                              location_id_by_room_id: dict[int, int],
+                              day_of_week_by_slot_id: dict[int, int] | None = None,
+                              lesson_number_by_slot_id: dict[int, int] | None = None,
+                              travel_buffer_slots: int = TRAVEL_BUFFER_SLOTS) -> None:
     """Один участник (группа/студент/преподаватель) не бывает в двух разных
     учебных локациях в одном слоте: между корпусами на разных локациях час езды.
+
+    Дорога занимает больше обычного перерыва, поэтому участник не может быть
+    на разных локациях и в соседних слотах одного дня: между такими парами
+    нужен свободный слот. Глубина правила — ``travel_buffer_slots`` слотов
+    после пары (0 отключает правило; без номеров слотов оно не применяется).
 
     Реализация — зеркальные булевы переменные присутствия участника на
     локации в слоте:
@@ -133,18 +142,50 @@ def add_location_consistency(model: cp_model.CpModel, specs: list[EventSpec],
         for participant in participants_by_event.get(event_id, ()):
             choice_vars_by_presence[(participant, location_id, slot_id)].append(choice_var)
 
-    presence_vars_by_participant_slot: dict[tuple[tuple[str, int], int], list] = defaultdict(list)
+    # (participant, slot) -> {location_id: presence-переменная}
+    presence_vars_by_participant_slot: dict[tuple[tuple[str, int], int], dict[int, cp_model.IntVar]] = \
+        defaultdict(dict)
     for (participant, location_id, slot_id), choice_vars \
             in choice_vars_by_presence.items():
         presence_var = model.NewBoolVar(
             f"pres_{participant[0]}{participant[1]}_l{location_id}_s{slot_id}")
-        model.Add(presence_var >= sum(choice_vars))
-        model.Add(presence_var <= sum(choice_vars))
-        presence_vars_by_participant_slot[(participant, slot_id)].append(presence_var)
+        model.Add(presence_var == sum(choice_vars))
+        presence_vars_by_participant_slot[(participant, slot_id)][location_id] = presence_var
 
     for participant_slot_presences in presence_vars_by_participant_slot.values():
         if len(participant_slot_presences) > 1:
-            model.AddAtMostOne(participant_slot_presences)
+            model.AddAtMostOne(participant_slot_presences.values())
+
+    if travel_buffer_slots > 0 and day_of_week_by_slot_id and lesson_number_by_slot_id:
+        _forbid_travel_between_close_slots(
+            model, presence_vars_by_participant_slot, day_of_week_by_slot_id,
+            lesson_number_by_slot_id, travel_buffer_slots)
+
+
+def _forbid_travel_between_close_slots(
+        model: cp_model.CpModel,
+        presence_vars_by_participant_slot: dict[tuple[tuple[str, int], int], dict[int, cp_model.IntVar]],
+        day_of_week_by_slot_id: dict[int, int],
+        lesson_number_by_slot_id: dict[int, int],
+        travel_buffer_slots: int) -> None:
+    """Запрещает пары «локация A в слоте, локация B в одном из следующих
+    ``travel_buffer_slots`` слотов того же дня» для одного участника."""
+    later_slot_ids: dict[int, list[int]] = defaultdict(list)
+    for slot_id, day in day_of_week_by_slot_id.items():
+        for other_slot_id, other_day in day_of_week_by_slot_id.items():
+            distance = lesson_number_by_slot_id[other_slot_id] - lesson_number_by_slot_id[slot_id]
+            if other_day == day and 0 < distance <= travel_buffer_slots:
+                later_slot_ids[slot_id].append(other_slot_id)
+
+    for (participant, slot_id), presences in presence_vars_by_participant_slot.items():
+        for other_slot_id in later_slot_ids.get(slot_id, ()):
+            other_presences = presence_vars_by_participant_slot.get((participant, other_slot_id))
+            if not other_presences:
+                continue
+            for location_id, presence_var in presences.items():
+                for other_location_id, other_presence_var in other_presences.items():
+                    if location_id != other_location_id:
+                        model.AddBoolOr([presence_var.Not(), other_presence_var.Not()])
 
 
 def add_event_pair_vars(model: cp_model.CpModel, specs: list[EventSpec],

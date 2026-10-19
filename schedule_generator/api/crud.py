@@ -209,7 +209,7 @@ class TeacherSerializer(serializers.ModelSerializer):
     class Meta:
         model = Teacher
         fields = ["id", "full_name", "max_pairs_per_day", "max_pairs_per_week",
-                  "display"]
+                  "chronotype", "display"]
 
 
 # --------------------------------------------------------------------------

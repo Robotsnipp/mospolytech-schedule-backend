@@ -24,11 +24,19 @@
 - Локации: корпуса стоят на разных локациях, между каждым час езды,
   поэтому один участник (группа/студент/преподаватель) не может в одном
   слоте находиться на двух разных локациях (add_location_consistency);
-  аудитории без корпуса в ограничении не участвуют.
+  аудитории без корпуса в ограничении не участвуют. Дорога занимает больше
+  перерыва, поэтому то же верно для соседних слотов одного дня
+  (config.TRAVEL_BUFFER_SLOTS).
 
 Soft-ограничения (штрафы в целевой функции, см. objectives.py):
 - не более max_pairs_per_day у преподавателя в день;
-- «окна» у групп (пропуск между занятыми слотами в течение дня).
+- «окна» у групп (пропуск между занятыми слотами в течение дня);
+- индекс усталости групп: превышение комфортного уровня и самый тяжёлый день;
+- хронотип преподавателя (жаворонок/сова);
+- режим подготовки к сессии: свободные дни у групп (PlanningPreferences).
+
+Перепланирование: ``pinned`` закрепляет уже стоящие пары бонусом, ``forbidden``
+запрещает отдельные размещения (см. services/replan.py).
 
 Модель реализуема всегда: пара либо ставится, либо нет; недостающие пары
 событий фиксируются как unscheduled (-> GenerationIssue, статус PARTIAL).
@@ -45,7 +53,15 @@ import time
 from ortools.sat.python import cp_model
 
 from ..enums import Format
-from .config import SolverConfig
+from .config import (
+    PENALTY_CHRONOTYPE,
+    PENALTY_FATIGUE_EXCESS,
+    PENALTY_FATIGUE_PEAK,
+    PENALTY_FREE_DAY_VIOLATION,
+    PIN_BONUS,
+    PlanningPreferences,
+    SolverConfig,
+)
 from .constraints import (
     add_attendee_exclusivity,
     add_day_restrictions,
@@ -59,6 +75,9 @@ from .constraints import (
 from .dto import EventSpec, GenerationResult
 from .objectives import (
     build_objective,
+    collect_chronotype_penalties,
+    collect_fatigue_penalties,
+    collect_free_day_penalties,
     collect_teacher_overload_penalties,
     collect_window_penalties,
 )
@@ -72,20 +91,29 @@ def generate_schedule(
     specs: list[EventSpec],
     teachers_by_id: dict[int, dict],
     config: SolverConfig | None = None,
+    preferences: PlanningPreferences | None = None,
+    pinned: list[dict] | None = None,
+    forbidden: set[tuple[int, int]] | None = None,
 ) -> GenerationResult:
     """Полный цикл решения: построить модель -> решить -> извлечь результат.
 
     :param slots: iterable TimeSlot (уже только нужного week_pattern)
     :param rooms: iterable Room (с preloaded building.location для правила локаций)
     :param specs: результат services/event_specs.build_event_specs
-    :param teachers_by_id: {id: {"max_pairs_per_day": int}}
+    :param teachers_by_id: {id: {"max_pairs_per_day": int, "chronotype": str}}
     :param config: параметры решателя (лимит времени, seed, потоки)
+    :param preferences: режимы мягких правил (например, свободные дни)
+    :param pinned: пары {event_id, slot_id, room_id}, которые желательно не
+        двигать (перепланирование); мягко, через бонус целевой функции
+    :param forbidden: размещения (event_id, slot_id), которые запрещены
     """
     solver_config = config or SolverConfig()
     start_time = time.time()
 
-    model, model_context = _build_model(slots=slots, rooms=rooms, specs=specs,
-                                        teachers_by_id=teachers_by_id)
+    model, model_context = _build_model(
+        slots=slots, rooms=rooms, specs=specs, teachers_by_id=teachers_by_id,
+        preferences=preferences or PlanningPreferences(),
+        pinned=pinned or [], forbidden=forbidden or set())
     if model_context is None:  # пустой шаблон недели — решать нечего
         return GenerationResult("INFEASIBLE", None, time.time() - start_time, [],
                                 [spec.event_id for spec in specs],
@@ -111,7 +139,9 @@ def generate_schedule(
 
 
 def _build_model(*, slots, rooms, specs: list[EventSpec],
-                 teachers_by_id: dict[int, dict]):
+                 teachers_by_id: dict[int, dict],
+                 preferences: PlanningPreferences,
+                 pinned: list[dict], forbidden: set[tuple[int, int]]):
     """Собирает CpModel по частям (hard -> soft -> objective).
 
     Возвращает (model, model_context); model_context — переменные, нужные для
@@ -124,6 +154,7 @@ def _build_model(*, slots, rooms, specs: list[EventSpec],
                                                 slot.lesson_number, slot.id))
     slot_ids = [slot.id for slot in slot_list]   # упорядочены по (day, lesson_number)
     day_of_week_by_slot_id = {slot.id: slot.day_of_week for slot in slot_list}
+    lesson_number_by_slot_id = {slot.id: slot.lesson_number for slot in slot_list}
     room_ids = [room.id for room in rooms]
     capacity_by_room_id = {room.id: room.capacity for room in rooms}
     # локация аудитории; если у аудитории нет корпуса/локации —
@@ -148,24 +179,60 @@ def _build_model(*, slots, rooms, specs: list[EventSpec],
     add_teacher_exclusivity(model, specs, slot_ids, pair_placement_vars)
     add_day_restrictions(model, specs, day_of_week_by_slot_id, pair_placement_vars)
     add_location_consistency(model, specs, slot_ids, pair_placement_vars,
-                             onsite_room_choice_vars, location_id_by_room_id)
+                             onsite_room_choice_vars, location_id_by_room_id,
+                             day_of_week_by_slot_id, lesson_number_by_slot_id)
     add_event_pair_vars(model, specs, slot_ids, pair_placement_vars)
     link_onsite_room_vars(model, specs, slot_ids, pair_placement_vars,
                           onsite_room_choice_vars, suitable_rooms_by_event_id)
+    for event_id, slot_id in forbidden:
+        if (event_id, slot_id) in pair_placement_vars:
+            model.Add(pair_placement_vars[(event_id, slot_id)] == 0)
 
     # ---- мягкие ограничения и целевая функция (services/objectives.py) ----
     teacher_overload_vars = collect_teacher_overload_penalties(
         model, specs, day_of_week_by_slot_id, pair_placement_vars, teachers_by_id)
     window_vars = collect_window_penalties(
         model, specs, slot_ids, day_of_week_by_slot_id, pair_placement_vars)
-    build_objective(model, specs, slot_ids, pair_placement_vars,
-                    window_vars, teacher_overload_vars)
+    fatigue_excess_vars, fatigue_peak_vars = collect_fatigue_penalties(
+        model, specs, slot_ids, day_of_week_by_slot_id, lesson_number_by_slot_id,
+        pair_placement_vars)
+    chronotype_vars = collect_chronotype_penalties(
+        specs, slot_ids, lesson_number_by_slot_id, pair_placement_vars, teachers_by_id)
+    free_day_violation_vars = collect_free_day_penalties(
+        model, specs, slot_ids, day_of_week_by_slot_id, pair_placement_vars,
+        preferences.free_days_per_group)
+    pinned_vars = _pinned_vars(pinned, pair_placement_vars, onsite_room_choice_vars)
+    build_objective(
+        model, specs, slot_ids, pair_placement_vars, window_vars, teacher_overload_vars,
+        extra_penalties=[
+            (PENALTY_FATIGUE_EXCESS, fatigue_excess_vars),
+            (PENALTY_FATIGUE_PEAK, fatigue_peak_vars),
+            (PENALTY_CHRONOTYPE, chronotype_vars),
+            (PENALTY_FREE_DAY_VIOLATION, free_day_violation_vars),
+        ],
+        extra_rewards=[(PIN_BONUS, pinned_vars)],
+    )
 
     return model, {
         "pair_placement_vars": pair_placement_vars,
         "onsite_room_choice_vars": onsite_room_choice_vars,
         "room_ids": room_ids,
     }
+
+
+def _pinned_vars(pinned: list[dict], pair_placement_vars: dict,
+                 onsite_room_choice_vars: dict) -> list:
+    """Переменные закреплённых пар: размещение в том же слоте и, если известна,
+    в той же аудитории. Пары, которых нет в модели, пропускаются."""
+    pinned_vars = []
+    for assignment in pinned:
+        placement_key = (assignment["event_id"], assignment["slot_id"])
+        if placement_key in pair_placement_vars:
+            pinned_vars.append(pair_placement_vars[placement_key])
+        room_key = (*placement_key, assignment.get("room_id"))
+        if room_key in onsite_room_choice_vars:
+            pinned_vars.append(onsite_room_choice_vars[room_key])
+    return pinned_vars
 
 
 def _build_variables(model: cp_model.CpModel, specs: list[EventSpec],
