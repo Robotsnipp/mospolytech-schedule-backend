@@ -29,11 +29,11 @@ from schedule_generator.enums import (
 )
 from schedule_generator.models import (
     Building,
-    Location,
     GenerationRun,
     Group,
     LectureStream,
     LessonEvent,
+    Location,
     Project,
     ProjectEnrollment,
     Room,

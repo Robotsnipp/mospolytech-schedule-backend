@@ -12,7 +12,6 @@ from django.contrib import admin
 
 from .models import (
     Building,
-    Location,
     Curriculum,
     CurriculumEntry,
     GenerationIssue,
@@ -20,6 +19,7 @@ from .models import (
     Group,
     LectureStream,
     LessonEvent,
+    Location,
     Module,
     Project,
     ProjectEnrollment,

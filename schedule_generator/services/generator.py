@@ -48,10 +48,10 @@ from ..enums import Format
 from .config import SolverConfig
 from .constraints import (
     add_attendee_exclusivity,
-    add_location_consistency,
     add_day_restrictions,
     add_event_pair_vars,
     add_lecture_single_slot,
+    add_location_consistency,
     add_room_exclusivity,
     add_teacher_exclusivity,
     link_onsite_room_vars,

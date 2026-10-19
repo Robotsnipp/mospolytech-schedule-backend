@@ -71,6 +71,14 @@ class Group(models.Model):
         verbose_name_plural = "Группы"
         ordering = ["name"]
 
+    def __str__(self):
+        return self.name
+
+    def save(self, *args, **kwargs):
+        if not self.is_dpo and self.admission_year is None and self.name:
+            self.admission_year = admission_year_from_group_name(self.name)
+        super().save(*args, **kwargs)
+
     def clean(self):
         super().clean()
         errors = {}
@@ -92,15 +100,7 @@ class Group(models.Model):
             if derived is not None:
                 self.admission_year = derived
         if errors:
-            raise ValidationError(errors)
-
-    def save(self, *args, **kwargs):
-        if not self.is_dpo and self.admission_year is None and self.name:
-            self.admission_year = admission_year_from_group_name(self.name)
-        super().save(*args, **kwargs)
-
-    def __str__(self):
-        return self.name
+            raise ValidationError(errors)    
 
 
 class Student(models.Model):

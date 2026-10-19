@@ -14,7 +14,11 @@ from dataclasses import dataclass, field
 
 from django.db.models import Q
 
-from schedule_generator.enums import LessonType, NON_GENERATED_LESSON_TYPES, effective_format
+from schedule_generator.enums import (
+    NON_GENERATED_LESSON_TYPES,
+    LessonType,
+    effective_format,
+)
 from schedule_generator.models import (
     GenerationRun,
     LectureStream,
@@ -137,7 +141,7 @@ def build_student_schedule(run: GenerationRun, student: Student) -> StudentSched
                    f"{sum(e.pairs_per_week for e in pe_events)} пар/нед — свободно.")
 
     # Транспонируем: строки таблицы — номера пар, колонки — дни недели.
-    rows = [[days[d][l] for d in range(max_day + 1)] for l in range(max_lesson)]
+    rows = [[days[d][i] for d in range(max_day + 1)] for i in range(max_lesson)]
     return StudentSchedule(student=student, rows=rows, num_days=max_day + 1,
                            total_pairs=total, pe_note=pe_note)
 
