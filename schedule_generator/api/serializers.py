@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from rest_framework import serializers
 
-from ..models import GenerationRun, Module, ScheduledClass, Semester, WeekPattern
+from ..models import Module, Semester, WeekPattern
 from .crud import (  # noqa: F401  (реэкспорт для импортов из этого модуля)
     BuildingSerializer,
     CurriculumEntrySerializer,

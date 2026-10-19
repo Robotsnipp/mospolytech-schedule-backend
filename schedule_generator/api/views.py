@@ -70,7 +70,6 @@ from .serializers import (
     ProjectEnrollmentSerializer,
     ProjectSerializer,
     RoomSerializer,
-    ScheduleFilterSerializer,
     ScheduledClassSerializer,
     SemesterSerializer,
     StudentSerializer,

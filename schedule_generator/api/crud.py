@@ -17,8 +17,8 @@
 
 from __future__ import annotations
 
-from rest_framework import serializers
 from drf_spectacular.utils import extend_schema_field
+from rest_framework import serializers
 
 from ..enums import LessonType
 from ..models import (
@@ -43,7 +43,6 @@ from ..models import (
     TimeSlot,
     WeekPattern,
 )
-
 
 # --------------------------------------------------------------------------
 # Календарь: семестр -> шаблон недели -> слоты; модули семестра
