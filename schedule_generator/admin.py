@@ -18,6 +18,8 @@ from .models import (
     GenerationIssue,
     GenerationRun,
     Group,
+    ImportedGroupSchedule,
+    ImportedLesson,
     LectureStream,
     LessonEvent,
     Location,
@@ -26,6 +28,7 @@ from .models import (
     ProjectEnrollment,
     Room,
     ScheduledClass,
+    ScheduleImport,
     Semester,
     Student,
     Subject,
@@ -33,6 +36,31 @@ from .models import (
     TimeSlot,
     WeekPattern,
 )
+
+
+@admin.register(ScheduleImport)
+class ScheduleImportAdmin(admin.ModelAdmin):
+    list_display = ("id", "created_at", "group_count", "lesson_count", "review_required")
+    readonly_fields = ("file_sha256", "created_at", "source", "source_metadata", "group_count", "lesson_count")
+
+
+@admin.register(ImportedGroupSchedule)
+class ImportedGroupScheduleAdmin(admin.ModelAdmin):
+    list_display = ("name", "schedule_import", "review_required")
+    list_filter = ("schedule_import",)
+    search_fields = ("name",)
+    readonly_fields = ("schedule_import", "name", "metadata", "source", "warnings")
+
+
+@admin.register(ImportedLesson)
+class ImportedLessonAdmin(admin.ModelAdmin):
+    list_display = ("subject", "group", "day_of_week", "lesson_number", "date_from", "date_to")
+    list_filter = ("group__schedule_import", "day_of_week")
+    search_fields = ("group__name", "subject", "teacher_raw")
+    readonly_fields = ("group", "source_path", "day_of_week", "lesson_number", "subject", "lesson_type",
+                       "teacher_raw", "teachers", "teacher_warnings", "date_from", "date_to",
+                       "start", "end", "week_raw", "data")
+    list_select_related = ("group",)
 
 # ---------------- Календарь ----------------
 
@@ -77,7 +105,9 @@ class StudentAdmin(admin.ModelAdmin):
 
 @admin.register(Teacher)
 class TeacherAdmin(admin.ModelAdmin):
+    list_display = ("id", "full_name")
     search_fields = ("full_name",)
+    readonly_fields = ("dmami_identity", "dmami_name_key")
 
 
 # ---------------- Проекты (ПД) ----------------

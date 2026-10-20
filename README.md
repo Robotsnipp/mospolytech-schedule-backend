@@ -317,6 +317,10 @@ push: серверная защита настраивается на GitHub.
 
 ## Прототипы парсеров
 
+Выгрузка расписаний всех групп из JSON API rasp.dmami.ru в общий и отдельные
+JSON/CSV-файлы, с сохранением исходников и офлайн-повтором HAR:
+[prototypes/dmami_parser](prototypes/dmami_parser/README.md).
+
 Локальное OCR сканированного очного плана и выгрузка JSON/CSV: [prototypes/curriculum_parser](prototypes/curriculum_parser/README.md).
 
 Разбор расписания ПД и физкультуры с выгрузкой JSON/CSV:

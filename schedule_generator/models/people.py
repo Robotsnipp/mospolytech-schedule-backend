@@ -121,6 +121,10 @@ class Teacher(models.Model):
     (жёстко: одна пара в слот; мягко: перегрузка по max_pairs_per_day)."""
 
     full_name = models.CharField("ФИО", max_length=150)
+    dmami_identity = models.CharField("Идентификатор источника rasp.dmami.ru", max_length=100,
+                                      unique=True, null=True, blank=True)
+    dmami_name_key = models.CharField("Нормализованное ФИО источника", max_length=150,
+                                      blank=True, default="", db_index=True)
     max_pairs_per_day = models.PositiveSmallIntegerField("Макс. пар в день", default=4)
     max_pairs_per_week = models.PositiveSmallIntegerField("Макс. пар в неделю", default=20)
 
