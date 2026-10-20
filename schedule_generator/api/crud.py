@@ -300,7 +300,8 @@ class CurriculumSerializer(serializers.ModelSerializer):
         model = Curriculum
         fields = ["id", "name", "program_code", "profile", "admission_year",
                   "study_form", "study_form_display", "duration_months",
-                  "version", "source_file", "display"]
+                  "version", "source_file", "source", "display"]
+        read_only_fields = ["source"]
         extra_kwargs = {"source_file": {"required": False}}
 
     def validate(self, attrs):
@@ -330,8 +331,8 @@ class CurriculumEntrySerializer(serializers.ModelSerializer):
         fields = ["id", "curriculum", "subject", "subject_name",
                   "discipline_code", "semester_number", "lecture_hours",
                   "practice_hours", "lab_hours", "independent_hours",
-                  "has_exam", "has_credit", "has_graded_credit", "display"]
-        read_only_fields = ["subject_name"]
+                  "has_exam", "has_credit", "has_graded_credit", "contact_hours", "source", "display"]
+        read_only_fields = ["subject_name", "source"]
 
     def validate(self, attrs):
         instance = self.instance
@@ -428,9 +429,10 @@ class LessonEventSerializer(serializers.ModelSerializer):
                   "effective_format", "group", "group_name", "stream",
                   "stream_label", "project", "project_title", "teacher",
                   "teacher_name", "module", "curriculum_entry",
-                  "pairs_per_week", "audience_size", "display"]
+                  "pairs_per_week", "audience_size", "academic_hours", "prepared_for_group",
+                  "preparation_source", "display"]
         read_only_fields = ["subject_name", "group_name", "stream_label",
-                            "project_title", "teacher_name"]
+                            "project_title", "teacher_name", "prepared_for_group", "preparation_source"]
 
     @extend_schema_field(serializers.CharField())
     def get_lesson_type_display(self, obj):
@@ -444,6 +446,8 @@ class LessonEventSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         instance = self.instance
         merged = {}
+        if instance is not None and instance.prepared_for_group_id:
+            raise serializers.ValidationError("Подготовленное занятие обновляется через prepare-load группы.")
         for key in ("semester", "subject", "lesson_type", "format", "group",
                     "stream", "project", "module"):
             if key in attrs:

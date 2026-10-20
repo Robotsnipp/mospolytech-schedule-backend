@@ -21,17 +21,6 @@ from ..enums import Format
 from .dto import EventSpec, FixedPDSpec
 
 
-def add_lecture_single_slot(model: cp_model.CpModel, specs: list[EventSpec],
-                            slot_ids: list[int], pair_placement_vars: dict) -> None:
-    """Лекция одного потока идёт строго в один слот недели:
-    все группы потока слушают её одновременно; аудитория не нужна."""
-    for spec in specs:
-        if spec.stream_id is not None:
-            model.AddAtMostOne(
-                pair_placement_vars[(spec.event_id, slot_id)] for slot_id in slot_ids
-            )
-
-
 def add_room_exclusivity(model: cp_model.CpModel, onsite_room_choice_vars: dict) -> None:
     """В одной аудитории в одном слоте — не более одного очного занятия."""
     vars_by_slot_room: dict[tuple[int, int], list] = {}
