@@ -512,11 +512,18 @@ class ScheduledClassSerializer(serializers.ModelSerializer):
                                          read_only=True, default=None)
     project_title = serializers.CharField(source="event.project.title",
                                           read_only=True, default=None)
-    teacher_name = serializers.CharField(source="event.teacher.full_name",
-                                         read_only=True, default=None)
+    teacher_name = serializers.SerializerMethodField()
     room_name = serializers.CharField(source="room.name", read_only=True,
                                       default=None)
     location_name = serializers.SerializerMethodField()
+    format = serializers.CharField(source="event.effective_format", read_only=True)
+    subject_id = serializers.IntegerField(source="event.subject_id", read_only=True)
+    teacher_id = serializers.SerializerMethodField()
+    group_id = serializers.IntegerField(source="event.group_id", read_only=True, allow_null=True)
+    stream_id = serializers.IntegerField(source="event.stream_id", read_only=True, allow_null=True)
+    project_id = serializers.IntegerField(source="event.project_id", read_only=True, allow_null=True)
+    group_ids = serializers.SerializerMethodField()
+    student_ids = serializers.SerializerMethodField()
 
     class Meta:
         model = ScheduledClass
@@ -524,11 +531,47 @@ class ScheduledClassSerializer(serializers.ModelSerializer):
                   "group_name", "stream_label", "project_title", "teacher_name",
                   "slot", "slot_day", "slot_lesson_number", "slot_start_time",
                   "slot_end_time", "week_pattern", "room", "room_name",
-                  "location_name", "display"]
+                  "location_name", "display", "format", "subject_id", "teacher_id",
+                  "group_id", "stream_id", "project_id", "group_ids", "student_ids"]
 
     @extend_schema_field(serializers.CharField())
     def get_location_name(self, obj):
         return obj.room.location_name_for_ui() if obj.room_id else ""
+
+    @extend_schema_field(serializers.IntegerField(allow_null=True))
+    def get_teacher_id(self, obj):
+        return obj.event.teacher_id or (obj.event.project.supervisor_id if obj.event.project_id else None)
+
+    @extend_schema_field(serializers.CharField(allow_null=True))
+    def get_teacher_name(self, obj):
+        teacher = obj.event.teacher
+        if teacher is None and obj.event.project_id:
+            teacher = obj.event.project.supervisor
+        return teacher.full_name if teacher is not None else None
+
+    @extend_schema_field(serializers.ListField(child=serializers.IntegerField()))
+    def get_group_ids(self, obj):
+        event = obj.event
+        if event.group_id:
+            return [event.group_id]
+        if event.stream_id:
+            return sorted(group.pk for group in event.stream.groups.all())
+        if event.project_id:
+            return sorted({e.student.group_id for e in event.project.enrollments.all()})
+        return []
+
+    @extend_schema_field(serializers.ListField(child=serializers.IntegerField()))
+    def get_student_ids(self, obj):
+        """У общих пар состав задаётся группами, у генерируемой ПД — студентами."""
+        if not obj.event.project_id:
+            return []
+        students = [e.student for e in obj.event.project.enrollments.all()]
+        kind, holder = self.context.get("holder_kind"), self.context.get("holder")
+        if kind == "group":
+            students = [s for s in students if s.group_id == holder.pk]
+        if kind == "student":
+            students = [s for s in students if s.pk == holder.pk]
+        return sorted(s.pk for s in students)
 
 
 # --------------------------------------------------------------------------

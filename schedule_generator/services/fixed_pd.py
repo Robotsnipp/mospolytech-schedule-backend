@@ -33,7 +33,7 @@ def occurrence_dates(session, semester, module, week_pattern):
 
 def load_fixed_pd(*, semester, module, week_pattern, slots):
     sessions = FixedProjectSession.objects.filter(project__semester=semester).select_related(
-        "project__semester", "project__supervisor", "module", "teacher", "room"
+        "project__semester", "project__supervisor", "module", "teacher", "room__building__location"
     ).prefetch_related("project__enrollments__student")
     if module:
         sessions = sessions.filter(Q(module=module) | Q(module__isnull=True))
@@ -68,6 +68,10 @@ def load_fixed_pd(*, semester, module, week_pattern, slots):
             "date": session.date.isoformat() if session.date else None,
             "occurrence_dates": [d.isoformat() for d in sorted(dates)],
             "teacher_id": teacher_id, "student_ids": sorted(spec.student_ids),
+            "student_group_ids": {str(s.pk): s.group_id for s in participants},
+            "teacher_name": (session.teacher or session.project.supervisor).full_name,
+            "room_name": session.room.name if session.room_id else None,
+            "location_name": session.room.location_name_for_ui() if session.room_id else "",
             "participant_group_ids": sorted(spec.participant_group_ids), "room_id": spec.room_id,
             "travel_buffer_minutes": spec.travel_buffer_minutes,
             "place_details": session.place_details, "source": session.source,

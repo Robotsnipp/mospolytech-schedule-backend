@@ -76,11 +76,15 @@ class GenerateRequestSerializer(serializers.Serializer):
 class ScheduleFilterSerializer(serializers.Serializer):
     """Query-параметры просмотра пар расписания (group / stream / teacher)."""
 
-    semester = serializers.PrimaryKeyRelatedField(queryset=Semester.objects.all())
+    semester = serializers.PrimaryKeyRelatedField(queryset=Semester.objects.all(), required=False)
     module = serializers.PrimaryKeyRelatedField(
         queryset=Module.objects.all(), required=False, allow_null=True)
     run = serializers.IntegerField(
-        required=False, help_text="ID конкретного запуска; по умолчанию — последний завершённый.")
+        required=False, min_value=1,
+        help_text="Совместимое имя параметра run_id.")
+    run_id = serializers.IntegerField(
+        required=False, min_value=1,
+        help_text="ID конкретного запуска; позволяет не указывать период.")
 
 
 class PatternScheduleFilterSerializer(ScheduleFilterSerializer):
@@ -88,3 +92,12 @@ class PatternScheduleFilterSerializer(ScheduleFilterSerializer):
 
     week_pattern = serializers.PrimaryKeyRelatedField(
         queryset=WeekPattern.objects.all(), required=False, allow_null=True)
+
+    def validate(self, attrs):
+        run_id, legacy_run = attrs.get("run_id"), attrs.get("run")
+        if run_id is not None and legacy_run is not None and run_id != legacy_run:
+            raise serializers.ValidationError({"run_id": "run и run_id должны совпадать."})
+        attrs["run_id"] = run_id if run_id is not None else legacy_run
+        if attrs["run_id"] is None and "semester" not in attrs:
+            raise serializers.ValidationError({"semester": "Укажите semester или run_id."})
+        return attrs
