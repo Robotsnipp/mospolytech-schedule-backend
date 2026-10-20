@@ -25,10 +25,21 @@
 
 from __future__ import annotations
 
-from ..models import GenerationRun, LessonEvent, Room, Teacher, TimeSlot
+from django.core.exceptions import ValidationError
+
+from ..enums import LessonType
+from ..models import (
+    FixedProjectSession,
+    GenerationRun,
+    LessonEvent,
+    Room,
+    Teacher,
+    TimeSlot,
+)
 from .config import SolverConfig
 from .dto import RunOutcome
 from .event_specs import build_event_specs
+from .fixed_pd import load_fixed_pd
 from .generator import generate_schedule
 from .result_writer import persist_result
 
@@ -59,6 +70,8 @@ def run_generation(*, semester, week_pattern=None, time_limit_seconds=30,
         raise GenerationError("Шаблон недели относится к другому семестру.")
     if module is None and LessonEvent.objects.filter(semester=semester, module__isnull=False).exists():
         raise GenerationError("Для занятий по модулям выберите модуль генерации.")
+    if module is None and FixedProjectSession.objects.filter(project__semester=semester, module__isnull=False).exists():
+        raise GenerationError("Для фиксированной ПД по модулям выберите модуль генерации.")
     run = GenerationRun.objects.create(semester=semester, module=module, status="PENDING")
     try:
         # --- 2. шаблон недели ---
@@ -80,6 +93,16 @@ def run_generation(*, semester, week_pattern=None, time_limit_seconds=30,
             events = events.filter(Q(module=module) | Q(module__isnull=True))
 
         # --- 4. подготовка событий ---
+        try:
+            fixed_pd, snapshot = load_fixed_pd(semester=semester, module=module,
+                                                week_pattern=week_pattern, slots=slots)
+        except (ValidationError, ValueError) as exc:
+            raise GenerationError(str(exc)) from exc
+        run.fixed_pd_snapshot = snapshot
+        # Фиксированная сетка проекта заменяет потребность генерировать его ПД,
+        # в том числе когда все даты проекта вне выбранного модуля/чётности.
+        fixed_projects = FixedProjectSession.objects.filter(project__semester=semester).values("project_id")
+        events = events.exclude(lesson_type=LessonType.PD, project_id__in=fixed_projects)
         specs, skipped = build_event_specs(events)
 
         # --- 5. решение ---
@@ -87,13 +110,17 @@ def run_generation(*, semester, week_pattern=None, time_limit_seconds=30,
         generation_result = generate_schedule(
             slots=slots, rooms=rooms, specs=specs,
             teachers_by_id=load_teacher_limits(), config=solver_config,
+            fixed_pd=fixed_pd,
         )
 
         # --- 6. сохранение ---
         persist_result(run=run, generation_result=generation_result,
                        slots=slots, rooms=rooms, events=events,
                        skipped=skipped, clear_previous=clear_previous)
-    except GenerationError:
+    except GenerationError as exc:
+        run.status = "ERROR"
+        run.message = str(exc)
+        run.save()
         raise
     except Exception as exc:  # noqa: BLE001 — фиксируем сбой в истории запусков
         run.status = "ERROR"
@@ -105,4 +132,5 @@ def run_generation(*, semester, week_pattern=None, time_limit_seconds=30,
         status=run.status,
         scheduled_count=run.scheduled_classes.count(),
         issue_count=run.issues.count(),
+        fixed_pd_count=len(run.fixed_pd_snapshot),
     )

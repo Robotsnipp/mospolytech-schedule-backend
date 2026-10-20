@@ -15,7 +15,9 @@
   когда и куда хочет (см. services/event_specs.py).
 - ПД (очно, «группа» = студенты, выбравшие проект): блокируются конкретные
   студенты проекта (а не целиком учебные группы), чтобы студенты других
-  учебных групп могли учиться в тот же слот; всегда очная — требует аудиторию.
+  учебных групп могли учиться в тот же слот. Фиксированная ПД передаётся
+  отдельными интервалами: люди, известная комната и запас на дорогу блокируются
+  жёстко. Дополнительная площадка не требует аудитории Политеха.
 - Внеучебка: может быть очной или онлайн (поле format на событии);
   очная занимает аудиторию, онлайн — нет. Тоже участвует в генерации.
 
@@ -42,6 +44,7 @@ from .config import SolverConfig
 from .constraints import (
     add_attendee_exclusivity,
     add_event_pair_vars,
+    add_fixed_pd_constraints,
     add_lecture_single_slot,
     add_room_exclusivity,
     add_teacher_exclusivity,
@@ -63,6 +66,7 @@ def generate_schedule(
     specs: list[EventSpec],
     teachers_by_id: dict[int, dict],
     config: SolverConfig | None = None,
+    fixed_pd=(),
 ) -> GenerationResult:
     """Полный цикл решения: построить модель -> решить -> извлечь результат.
 
@@ -76,7 +80,7 @@ def generate_schedule(
     start_time = time.time()
 
     model, model_context = _build_model(slots=slots, rooms=rooms, specs=specs,
-                                        teachers_by_id=teachers_by_id)
+                                        teachers_by_id=teachers_by_id, fixed_pd=fixed_pd)
     if model_context is None:  # пустой шаблон недели — решать нечего
         return GenerationResult("INFEASIBLE", None, time.time() - start_time, [],
                                 [spec.event_id for spec in specs],
@@ -102,7 +106,7 @@ def generate_schedule(
 
 
 def _build_model(*, slots, rooms, specs: list[EventSpec],
-                 teachers_by_id: dict[int, dict]):
+                 teachers_by_id: dict[int, dict], fixed_pd=()):
     """Собирает CpModel по частям (hard -> soft -> objective).
 
     Возвращает (model, model_context); model_context — переменные, нужные для
@@ -130,6 +134,8 @@ def _build_model(*, slots, rooms, specs: list[EventSpec],
     add_room_exclusivity(model, onsite_room_choice_vars)
     add_attendee_exclusivity(model, specs, slot_ids, pair_placement_vars)
     add_teacher_exclusivity(model, specs, slot_ids, pair_placement_vars)
+    add_fixed_pd_constraints(model, specs, fixed_pd, slot_list,
+                             pair_placement_vars, onsite_room_choice_vars)
     add_event_pair_vars(model, specs, slot_ids, pair_placement_vars)
     link_onsite_room_vars(model, specs, slot_ids, pair_placement_vars,
                           onsite_room_choice_vars, suitable_rooms_by_event_id)

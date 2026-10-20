@@ -1,0 +1,207 @@
+{
+  "schema_version": 1,
+  "notice": "Синтетические студенты и учебная нагрузка. Название, ID проекта и опубликованное время ПД взяты из проверенных источников. Это не выгрузка состава проекта.",
+  "catalog": [
+    {
+      "portal_id": 4330,
+      "title": "Лаборатория интеллектуальных систем [1]",
+      "source_number": 292,
+      "match_basis": "Название проекта в кабинете совпадает с названием в расписании; проверено вручную 2026-10-20."
+    }
+  ],
+  "roster_responses": {
+    "4330": [
+      {
+        "fio": "Демо-студент 1",
+        "guid": "fixture-student-001",
+        "grp": "DEMO-A",
+        "pname": "",
+        "checked": true
+      },
+      {
+        "fio": "Демо-студент 2",
+        "guid": "fixture-student-002",
+        "grp": "DEMO-B",
+        "pname": "",
+        "checked": true
+      }
+    ]
+  },
+  "other_students": [
+    {
+      "fio": "Демо-студент 3",
+      "guid": "fixture-student-003",
+      "grp": "DEMO-A"
+    },
+    {
+      "fio": "Демо-студент 4",
+      "guid": "fixture-student-004",
+      "grp": "DEMO-C"
+    }
+  ],
+  "travel_buffer_minutes": 30,
+  "pd_document": {
+    "kind": "pd",
+    "schema_version": 1,
+    "parser_revision": 4,
+    "academic_year": "2026/2027",
+    "source": {
+      "url": "https://docs.google.com/spreadsheets/d/e/2PACX-1vRHgwt89VM13uuUy8dDvpjlb-BDM4ovsIKhoLDGIaI58NJtAawxABVW7sdVRDDH5UGaM2bsryni6Im7/pubhtml?gid=643150359&single=true",
+      "sheet_url": "https://docs.google.com/spreadsheets/d/e/2PACX-1vRHgwt89VM13uuUy8dDvpjlb-BDM4ovsIKhoLDGIaI58NJtAawxABVW7sdVRDDH5UGaM2bsryni6Im7/pubhtml/sheet?headers=false&gid=643150359",
+      "sha256": "0882523c9a7e12c37d90b9098554451457891a50124adb12cdfd0801bde825ee",
+      "captured_at": "2026-10-20T09:51:43.652012+00:00",
+      "snapshot": "pd-source.html"
+    },
+    "projects": [
+      {
+        "source_number": 292,
+        "name": "Лаборатория интеллектуальных систем [1]",
+        "teacher_raw": "Гневшев Александр Юрьевич",
+        "schedules": [
+          {
+            "raw": "понедельник\n12:20-13:50\nН405",
+            "column_day": 0,
+            "meetings": [
+              {
+                "start": "12:20",
+                "end": "13:50",
+                "lesson_number": 3,
+                "raw": "12:20-13:50",
+                "valid": true,
+                "start_minute": 740,
+                "end_minute": 830,
+                "blocked_lesson_numbers": [
+                  3
+                ],
+                "timing_notes": [],
+                "day_of_week": 0,
+                "recurrence": "weekly_candidate",
+                "date": null,
+                "date_mentions": [],
+                "place_raw": "Н405",
+                "room_candidates": [
+                  {
+                    "label": "Н405",
+                    "location": "ул. Большая Семёновская",
+                    "room": "Н405"
+                  }
+                ],
+                "place_details": {
+                  "kind": "rooms",
+                  "raw": "Н405",
+                  "room_candidates": [
+                    {
+                      "label": "Н405",
+                      "location": "ул. Большая Семёновская",
+                      "room": "Н405"
+                    }
+                  ],
+                  "annotations": [],
+                  "address_raw": null,
+                  "external_room_labels": [],
+                  "unparsed": [],
+                  "warnings": [],
+                  "subgroup_number": null,
+                  "room_assignment_mode": "single_or_unspecified",
+                  "venue": null,
+                  "resource_policy": {
+                    "reserve_room": null,
+                    "block_attendees": true,
+                    "block_teacher": true,
+                    "travel_time_required": true,
+                    "allow_new_assignments": null,
+                    "scope": "university_room_reference"
+                  }
+                },
+                "teacher_override_raw": [],
+                "place_inherited": false,
+                "notes": [],
+                "warnings": [],
+                "review_required": true
+              }
+            ],
+            "changes": [],
+            "notes": [],
+            "warnings": [],
+            "source_cell": {
+              "row": 297,
+              "column": "F",
+              "a1": "F297"
+            }
+          },
+          {
+            "raw": "среда\n16:10-17:40\nАВ4310",
+            "column_day": 2,
+            "meetings": [
+              {
+                "start": "16:10",
+                "end": "17:40",
+                "lesson_number": 5,
+                "raw": "16:10-17:40",
+                "valid": true,
+                "start_minute": 970,
+                "end_minute": 1060,
+                "blocked_lesson_numbers": [
+                  5
+                ],
+                "timing_notes": [],
+                "day_of_week": 2,
+                "recurrence": "weekly_candidate",
+                "date": null,
+                "date_mentions": [],
+                "place_raw": "АВ4310",
+                "room_candidates": [
+                  {
+                    "label": "АВ4310",
+                    "location": "ул. Автозаводская",
+                    "room": "4310"
+                  }
+                ],
+                "place_details": {
+                  "kind": "rooms",
+                  "raw": "АВ4310",
+                  "room_candidates": [
+                    {
+                      "label": "АВ4310",
+                      "location": "ул. Автозаводская",
+                      "room": "4310"
+                    }
+                  ],
+                  "annotations": [],
+                  "address_raw": null,
+                  "external_room_labels": [],
+                  "unparsed": [],
+                  "warnings": [],
+                  "subgroup_number": null,
+                  "room_assignment_mode": "single_or_unspecified",
+                  "venue": null,
+                  "resource_policy": {
+                    "reserve_room": null,
+                    "block_attendees": true,
+                    "block_teacher": true,
+                    "travel_time_required": true,
+                    "allow_new_assignments": null,
+                    "scope": "university_room_reference"
+                  }
+                },
+                "teacher_override_raw": [],
+                "place_inherited": false,
+                "notes": [],
+                "warnings": [],
+                "review_required": true
+              }
+            ],
+            "changes": [],
+            "notes": [],
+            "warnings": [],
+            "source_cell": {
+              "row": 297,
+              "column": "G",
+              "a1": "G297"
+            }
+          }
+        ]
+      }
+    ]
+  }
+}
