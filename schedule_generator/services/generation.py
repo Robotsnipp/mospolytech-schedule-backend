@@ -37,6 +37,7 @@ from ..models import (
     TimeSlot,
 )
 from .config import SolverConfig
+from .curriculum import validate_prepared_load
 from .dto import RunOutcome
 from .event_specs import build_event_specs
 from .fixed_pd import load_fixed_pd
@@ -95,6 +96,7 @@ def run_generation(*, semester, week_pattern=None, time_limit_seconds=30,
 
         # --- 4. подготовка событий ---
         try:
+            validate_prepared_load(events)
             fixed_pd, snapshot = load_fixed_pd(semester=semester, module=module,
                                                 week_pattern=week_pattern, slots=slots)
         except (ValidationError, ValueError) as exc:

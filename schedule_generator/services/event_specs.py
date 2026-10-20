@@ -97,4 +97,12 @@ def build_event_specs(events) -> tuple[list[EventSpec], list[tuple]]:
             # правила размещения по дням (ПД — пн/ср, остальное — вт/чт/пт/сб)
             allowed_days=allowed_days_for(event.lesson_type),
         ))
+    group_ids = {group_id for spec in specs for group_id in spec.blocking_group_ids}
+    students_by_group = {}
+    for student_id, group_id in Student.objects.filter(group_id__in=group_ids).values_list("id", "group_id"):
+        students_by_group.setdefault(group_id, set()).add(student_id)
+    for spec in specs:
+        spec.attending_student_ids = set(spec.blocking_student_ids)
+        for group_id in spec.blocking_group_ids:
+            spec.attending_student_ids.update(students_by_group.get(group_id, ()))
     return specs, skipped

@@ -8,8 +8,8 @@
 - Практики/лабораторки (очные, на одну группу): жёсткие ограничения —
   группа не может быть в двух местах одновременно, аудитория одна на слот,
   вместимость >= размер группы.
-- Лекции (онлайн, на поток групп): лекция одного потока идёт строго в один
-  слот недели (все группы потока слушают её одновременно); группы-слушатели
+- Лекции (онлайн, на поток групп): группы потока слушают каждую пару
+  одновременно; число пар определяется нагрузкой; группы-слушатели
   не могут пересекаться с другими занятиями в этом слоте; аудитория не нужна.
 - Физкультура (PE): полностью исключается из модели — студент приходит
   когда и куда хочет (см. services/event_specs.py).
@@ -29,8 +29,9 @@
   аудитории без корпуса в ограничении не участвуют.
 
 Soft-ограничения (штрафы в целевой функции, см. objectives.py):
-- не более max_pairs_per_day у преподавателя в день;
-- «окна» у групп (пропуск между занятыми слотами в течение дня).
+- не более max_pairs_per_day генерируемых пар преподавателя в день;
+- ожидание студентов и преподавателей между их занятиями, включая ПД,
+  сверх обычного перерыва. Полнота размещения приоритетнее мягких штрафов.
 
 Модель реализуема всегда: пара либо ставится, либо нет; недостающие пары
 событий фиксируются как unscheduled (-> GenerationIssue, статус PARTIAL).
@@ -53,7 +54,6 @@ from .constraints import (
     add_day_restrictions,
     add_event_pair_vars,
     add_fixed_pd_constraints,
-    add_lecture_single_slot,
     add_location_consistency,
     add_room_exclusivity,
     add_teacher_exclusivity,
@@ -146,7 +146,6 @@ def _build_model(*, slots, rooms, specs: list[EventSpec],
         _build_variables(model, specs, slot_ids, room_ids, capacity_by_room_id)
 
     # ---- жёсткие ограничения (services/constraints.py) ----
-    add_lecture_single_slot(model, specs, slot_ids, pair_placement_vars)
     add_room_exclusivity(model, onsite_room_choice_vars)
     add_attendee_exclusivity(model, specs, slot_ids, pair_placement_vars)
     add_teacher_exclusivity(model, specs, slot_ids, pair_placement_vars)
@@ -164,7 +163,8 @@ def _build_model(*, slots, rooms, specs: list[EventSpec],
     teacher_overload_vars = collect_teacher_overload_penalties(
         model, specs, day_of_week_by_slot_id, pair_placement_vars, teachers_by_id)
     window_vars = collect_window_penalties(
-        model, specs, slot_ids, day_of_week_by_slot_id, pair_placement_vars)
+        model, specs, slot_ids, day_of_week_by_slot_id, pair_placement_vars,
+        slots=slot_list, fixed_pd=fixed_pd)
     build_objective(model, specs, slot_ids, pair_placement_vars,
                     window_vars, teacher_overload_vars)
 

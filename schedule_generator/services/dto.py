@@ -39,6 +39,9 @@ class EventSpec:
     # Группы отдельных участников ПД: конфликтуют с общей парой группы,
     # но не запрещают два разных проекта с непересекающимися студентами.
     participant_group_ids: set[int] = field(default_factory=set)
+    # Полный состав слушателей для персональной оценки окон: обычные пары
+    # группы/потока вместе с ПД конкретного студента.
+    attending_student_ids: set[int] = field(default_factory=set)
 
 
 @dataclass(frozen=True)

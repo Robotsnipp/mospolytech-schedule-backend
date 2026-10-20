@@ -24,6 +24,7 @@
 
 from __future__ import annotations
 
+from django.core.exceptions import ValidationError
 from django.db.models import Count, Q
 from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_view
 from rest_framework import status, viewsets
@@ -53,6 +54,17 @@ from ..models import (
     WeekPattern,
 )
 from ..services import GenerationError, run_generation
+from ..services.curriculum import (
+    CurriculumDataError,
+    import_curriculum,
+    prepare_module_load,
+)
+from .preparation import (
+    CurriculumImportRequestSerializer,
+    CurriculumImportResultSerializer,
+    ModuleLoadRequestSerializer,
+    ModuleLoadResultSerializer,
+)
 from .serializers import (
     BuildingSerializer,
     CurriculumEntrySerializer,
@@ -255,6 +267,19 @@ class GroupViewSet(CrudViewSet):
     serializer_class = GroupSerializer
     search_fields = ["name"]
 
+    @extend_schema(summary="Подготовить нагрузку группы в модуле", tags=["Учебные планы"],
+                   request=ModuleLoadRequestSerializer, responses={200: ModuleLoadResultSerializer})
+    @action(detail=True, methods=["post"], url_path="prepare-load")
+    def prepare_load(self, request, pk=None):
+        group = self.get_object()
+        serializer = ModuleLoadRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            result = prepare_module_load(group=group, **serializer.validated_data)
+        except (CurriculumDataError, ValidationError) as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(result)
+
     def get_queryset(self):
         qs = super().get_queryset()
         params = self.request.query_params
@@ -456,6 +481,18 @@ class CurriculumViewSet(CrudViewSet):
     queryset = Curriculum.objects.all()
     serializer_class = CurriculumSerializer
     search_fields = ["name", "program_code", "profile"]
+
+    @extend_schema(summary="Импортировать проверенный JSON учебного плана", tags=["Учебные планы"],
+                   request=CurriculumImportRequestSerializer, responses={200: CurriculumImportResultSerializer})
+    @action(detail=False, methods=["post"], url_path="import")
+    def import_plan(self, request):
+        serializer = CurriculumImportRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            result = import_curriculum(**serializer.validated_data)
+        except (CurriculumDataError, ValidationError) as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(result)
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -853,15 +890,16 @@ class GenerateViewSet(viewsets.ViewSet):
     Что происходит внутри (детали — в services/generation.py):
     1. Берутся все LessonEvent семестра; физкультура (PE) исключается —
        она не генерируется (студент приходит в любое время/место).
-    2. Лекции планируются онлайн на потоки групп (один слот на поток),
+    2. Лекции планируются онлайн на потоки групп (число пар задано нагрузкой),
        практики/лаборатории — очно на группу, ПД — очно на студентов,
        выбравших проект, внеучебка — очно или онлайн (поле format).
     3. Фиксированная ПД блокирует время участников и преподавателя; известная
        комната резервируется, остальные пары учитывают заданный буфер на дорогу.
        Снимок ПД возвращается в fixed_pd_snapshot отдельно от scheduled_classes.
     4. CP-SAT размещает требуемые пары по слотам шаблона недели, выбирает
-       аудитории (вместимость >= размер аудитории), минимизирует окна и
-       перегрузку преподавателей.
+       аудитории (вместимость >= число слушателей). Сначала максимизируется
+       число пар, затем приоритет лекций; дальше уменьшается ожидание студентов
+       и преподавателей с учётом ПД и перегрузка преподавателей.
     5. Результат сохраняется как ScheduledClass + GenerationRun (+ Issues).
     """
 
