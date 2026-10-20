@@ -13,6 +13,8 @@
 
 from __future__ import annotations
 
+from collections import defaultdict
+
 from ortools.sat.python import cp_model
 
 from ..enums import Format
@@ -124,6 +126,73 @@ def add_fixed_pd_constraints(model, specs: list[EventSpec], fixed_pd: list[Fixed
                     choice = onsite_room_choice_vars.get((spec.event_id, slot.id, fixed.room_id))
                     if choice is not None:
                         model.Add(choice == 0)
+
+def add_day_restrictions(model: cp_model.CpModel, specs: list[EventSpec],
+                         day_of_week_by_slot_id: dict[int, int],
+                         pair_placement_vars: dict) -> None:
+    """Событие можно ставить только в слоты разрешённых дней недели.
+
+    Например, проектная деятельность занимает пн и ср, и в эти дни другие
+    пары не планируются: у обычных занятий allowed_days = {0,1,3,4,5},
+    у ПД allowed_days = {0,2} (см. services/day_rules.py и event_specs.py).
+    allowed_days == frozenset() означает «без ограничений по дням».
+    """
+    for spec in specs:
+        if not spec.allowed_days:
+            continue
+        for slot_id, day_of_week in day_of_week_by_slot_id.items():
+            if day_of_week not in spec.allowed_days:
+                model.Add(pair_placement_vars[(spec.event_id, slot_id)] == 0)
+
+
+def add_location_consistency(model: cp_model.CpModel, specs: list[EventSpec],
+                              slot_ids: list[int], pair_placement_vars: dict,
+                              onsite_room_choice_vars: dict,
+                              location_id_by_room_id: dict[int, int]) -> None:
+    """Один участник (группа/студент/преподаватель) не бывает в двух разных
+    учебных локациях в одном слоте: между корпусами на разных локациях час езды.
+
+    Реализация — зеркальные булевы переменные присутствия участника на
+    локации в слоте:
+        presence(participant, location, slot) == 1
+            <=> participant ведёт/слушает очное событие на этой локации.
+    - presence >= каждая room_choice этого сочетания;
+    - presence <= сумма room_choice этого сочетания;
+    - сумма presence по всем локациям для (participant, slot) <= 1.
+    Онлайн-занятия аудитории не занимают и presence не создают.
+    """
+    participants_by_event: dict[int, list[tuple[str, int]]] = defaultdict(list)
+    for spec in specs:
+        if spec.format != Format.ONSITE:
+            continue
+        for group_id in spec.blocking_group_ids:
+            participants_by_event[spec.event_id].append(("group", group_id))
+        for student_id in spec.blocking_student_ids:
+            participants_by_event[spec.event_id].append(("student", student_id))
+        if spec.teacher_id is not None:
+            participants_by_event[spec.event_id].append(("teacher", spec.teacher_id))
+
+    # (participant, location, slot) -> room_choice-переменные этого сочетания
+    choice_vars_by_presence: dict[tuple[tuple[str, int], int, int], list] = defaultdict(list)
+    for (event_id, slot_id, room_id), choice_var in onsite_room_choice_vars.items():
+        location_id = location_id_by_room_id.get(room_id)
+        if location_id is None:
+            continue  # аудитория без корпуса/локации — ограничение не применяется
+        for participant in participants_by_event.get(event_id, ()):
+            choice_vars_by_presence[(participant, location_id, slot_id)].append(choice_var)
+
+    presence_vars_by_participant_slot: dict[tuple[tuple[str, int], int], list] = defaultdict(list)
+    for (participant, location_id, slot_id), choice_vars \
+            in choice_vars_by_presence.items():
+        presence_var = model.NewBoolVar(
+            f"pres_{participant[0]}{participant[1]}_l{location_id}_s{slot_id}")
+        model.Add(presence_var >= sum(choice_vars))
+        model.Add(presence_var <= sum(choice_vars))
+        presence_vars_by_participant_slot[(participant, slot_id)].append(presence_var)
+
+    for participant_slot_presences in presence_vars_by_participant_slot.values():
+        if len(participant_slot_presences) > 1:
+            model.AddAtMostOne(participant_slot_presences)
 
 
 def add_event_pair_vars(model: cp_model.CpModel, specs: list[EventSpec],

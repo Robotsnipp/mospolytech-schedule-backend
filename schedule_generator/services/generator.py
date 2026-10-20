@@ -20,6 +20,13 @@
   жёстко. Дополнительная площадка не требует аудитории Политеха.
 - Внеучебка: может быть очной или онлайн (поле format на событии);
   очная занимает аудиторию, онлайн — нет. Тоже участвует в генерации.
+- Дни ПД: проектная деятельность занимает понедельники и среды; в эти дни
+  обычные пары (практики/лабы/лекции) не планируются (services/day_rules.py,
+  add_day_restrictions).
+- Локации: корпуса стоят на разных локациях, между каждым час езды,
+  поэтому один участник (группа/студент/преподаватель) не может в одном
+  слоте находиться на двух разных локациях (add_location_consistency);
+  аудитории без корпуса в ограничении не участвуют.
 
 Soft-ограничения (штрафы в целевой функции, см. objectives.py):
 - не более max_pairs_per_day у преподавателя в день;
@@ -43,9 +50,11 @@ from ..enums import Format
 from .config import SolverConfig
 from .constraints import (
     add_attendee_exclusivity,
+    add_day_restrictions,
     add_event_pair_vars,
     add_fixed_pd_constraints,
     add_lecture_single_slot,
+    add_location_consistency,
     add_room_exclusivity,
     add_teacher_exclusivity,
     link_onsite_room_vars,
@@ -71,7 +80,7 @@ def generate_schedule(
     """Полный цикл решения: построить модель -> решить -> извлечь результат.
 
     :param slots: iterable TimeSlot (уже только нужного week_pattern)
-    :param rooms: iterable Room
+    :param rooms: iterable Room (с preloaded building.location для правила локаций)
     :param specs: результат services/event_specs.build_event_specs
     :param teachers_by_id: {id: {"max_pairs_per_day": int}}
     :param config: параметры решателя (лимит времени, seed, потоки)
@@ -121,6 +130,13 @@ def _build_model(*, slots, rooms, specs: list[EventSpec],
     day_of_week_by_slot_id = {slot.id: slot.day_of_week for slot in slot_list}
     room_ids = [room.id for room in rooms]
     capacity_by_room_id = {room.id: room.capacity for room in rooms}
+    # локация аудитории; если у аудитории нет корпуса/локации —
+    # ограничение «одна локация на слот» для неё не применяется
+    location_id_by_room_id = {
+        room.id: location_id
+        for room in rooms
+        if room.building_id and (location_id := room.building.location_id) is not None
+    }
 
     if not slot_ids:
         return model, None
@@ -136,6 +152,10 @@ def _build_model(*, slots, rooms, specs: list[EventSpec],
     add_teacher_exclusivity(model, specs, slot_ids, pair_placement_vars)
     add_fixed_pd_constraints(model, specs, fixed_pd, slot_list,
                              pair_placement_vars, onsite_room_choice_vars)
+
+    add_day_restrictions(model, specs, day_of_week_by_slot_id, pair_placement_vars)
+    add_location_consistency(model, specs, slot_ids, pair_placement_vars,
+                             onsite_room_choice_vars, location_id_by_room_id)
     add_event_pair_vars(model, specs, slot_ids, pair_placement_vars)
     link_onsite_room_vars(model, specs, slot_ids, pair_placement_vars,
                           onsite_room_choice_vars, suitable_rooms_by_event_id)

@@ -34,6 +34,8 @@ class EventSpec:
     blocking_student_ids: set[int] = field(default_factory=set)
     # Для лекций: id потока — все его группы обязаны слушать в одном слоте
     stream_id: int | None = None
+    # Разрешённые дни недели размещения (пусто — без ограничений по дням).
+    allowed_days: frozenset[int] = frozenset()
     # Группы отдельных участников ПД: конфликтуют с общей парой группы,
     # но не запрещают два разных проекта с непересекающимися студентами.
     participant_group_ids: set[int] = field(default_factory=set)

@@ -1,19 +1,49 @@
 """Сериализаторы API генератора расписания (слой представления).
 
 Ответственность: только валидация входных данных HTTP и форматирование
-выходных. Бизнес-логика — в services/.
+выходных. Бизнес-логика — в services/. CRUD-сериализаторы справочников —
+в api/crud.py (реэкспортируются здесь, чтобы весь API-контракт был виден
+из одного модуля).
 """
+
+from __future__ import annotations
 
 from rest_framework import serializers
 
-from ..models import GenerationRun, Module, ScheduledClass, Semester, WeekPattern
+from ..models import Module, Semester, WeekPattern
+from .crud import (  # noqa: F401  (реэкспорт для импортов из этого модуля)
+    BuildingSerializer,
+    CurriculumEntrySerializer,
+    CurriculumSerializer,
+    GenerationIssueSerializer,
+    GenerationRunListSerializer,
+    GenerationRunSerializer,
+    GroupSerializer,
+    LectureStreamSerializer,
+    LessonEventSerializer,
+    LocationSerializer,
+    ModuleSerializer,
+    ProjectEnrollmentSerializer,
+    ProjectSerializer,
+    RoomSerializer,
+    ScheduledClassSerializer,
+    SemesterSerializer,
+    StudentSerializer,
+    SubjectSerializer,
+    TeacherSerializer,
+    TimeSlotSerializer,
+    WeekPatternSerializer,
+)
 
 
 class GenerateRequestSerializer(serializers.Serializer):
     """Параметры запуска генерации недельного шаблона расписания."""
 
     semester = serializers.PrimaryKeyRelatedField(queryset=Semester.objects.all())
-    module = serializers.PrimaryKeyRelatedField(queryset=Module.objects.all(), required=False, allow_null=True)
+    module = serializers.PrimaryKeyRelatedField(
+        queryset=Module.objects.all(), required=False, allow_null=True,
+        help_text="Календарный модуль; если у семестра есть модульные занятия — обязателен.",
+    )
     week_pattern = serializers.PrimaryKeyRelatedField(
         queryset=WeekPattern.objects.all(), required=False, allow_null=True,
         help_text="Шаблон недели; по умолчанию — первый паттерн семестра.",
@@ -39,17 +69,22 @@ class GenerateRequestSerializer(serializers.Serializer):
         return attrs
 
 
-class ScheduledClassSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = ScheduledClass
-        fields = ["id", "event", "slot", "room"]
+# ---------------------------------------------------------------------------
+# Параметры фильтрации read-only действий (для корректной схемы в Swagger UI)
+# ---------------------------------------------------------------------------
+
+class ScheduleFilterSerializer(serializers.Serializer):
+    """Query-параметры просмотра пар расписания (group / stream / teacher)."""
+
+    semester = serializers.PrimaryKeyRelatedField(queryset=Semester.objects.all())
+    module = serializers.PrimaryKeyRelatedField(
+        queryset=Module.objects.all(), required=False, allow_null=True)
+    run = serializers.IntegerField(
+        required=False, help_text="ID конкретного запуска; по умолчанию — последний завершённый.")
 
 
-class GenerationRunSerializer(serializers.ModelSerializer):
-    scheduled_classes = ScheduledClassSerializer(many=True, read_only=True)
-    issues = serializers.StringRelatedField(many=True, read_only=True)
+class PatternScheduleFilterSerializer(ScheduleFilterSerializer):
+    """Дополнительно фильтр по шаблону недели (чётной/нечётной)."""
 
-    class Meta:
-        model = GenerationRun
-        fields = ["id", "semester", "module", "created_at", "status", "objective_value",
-                  "solve_time_seconds", "message", "scheduled_classes", "fixed_pd_snapshot", "issues"]
+    week_pattern = serializers.PrimaryKeyRelatedField(
+        queryset=WeekPattern.objects.all(), required=False, allow_null=True)

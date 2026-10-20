@@ -14,14 +14,14 @@
       {
         "fio": "Демо-студент 1",
         "guid": "fixture-student-001",
-        "grp": "DEMO-A",
+        "grp": "241-9901",
         "pname": "",
         "checked": true
       },
       {
         "fio": "Демо-студент 2",
         "guid": "fixture-student-002",
-        "grp": "DEMO-B",
+        "grp": "241-9902",
         "pname": "",
         "checked": true
       }
@@ -31,12 +31,12 @@
     {
       "fio": "Демо-студент 3",
       "guid": "fixture-student-003",
-      "grp": "DEMO-A"
+      "grp": "241-9901"
     },
     {
       "fio": "Демо-студент 4",
       "guid": "fixture-student-004",
-      "grp": "DEMO-C"
+      "grp": "241-9903"
     }
   ],
   "travel_buffer_minutes": 30,

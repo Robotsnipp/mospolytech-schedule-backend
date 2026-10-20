@@ -1,5 +1,6 @@
 from copy import deepcopy
 from datetime import date, time
+from unittest.mock import patch
 
 from django.core.exceptions import ValidationError
 from django.test import TestCase
@@ -30,6 +31,13 @@ from schedule_generator.services.pd_import import PDImportError, import_fixed_pd
 
 class FixedPDTests(TestCase):
     def setUp(self):
+        # Проверяем интервалы и конфликты независимо от общего резервирования
+        # пн/ср под ПД: оно иначе маскирует ошибку блокировок обычных пар.
+        # Сам CP-SAT и остальные ограничения работают без подмены.
+        self.day_rules = patch("schedule_generator.services.event_specs.allowed_days_for",
+                               return_value=frozenset(range(6)))
+        self.day_rules.start()
+        self.addCleanup(self.day_rules.stop)
         self.semester = Semester.objects.create(name="2026 autumn", start_date=date(2026, 9, 1))
         self.module = Module.objects.create(semester=self.semester, number=1,
             start_date=date(2026, 9, 1), end_date=date(2026, 10, 31), teaching_weeks=9)
@@ -99,6 +107,16 @@ class FixedPDTests(TestCase):
         snapshot = GenerationRunSerializer(GenerationRun.objects.get(pk=result.run_id)).data["fixed_pd_snapshot"]
         self.assertEqual((snapshot[0]["start"], snapshot[0]["end"], snapshot[0]["room_id"]), ("13:00", "16:00", None))
         self.assertEqual(snapshot[0]["student_ids"], [self.student.pk])
+
+    def test_default_day_rules_keep_monday_pd_and_place_regular_pair_on_tuesday(self):
+        self.day_rules.stop()
+        self.fixed()
+        self.lesson()
+        TimeSlot.objects.create(week_pattern=self.pattern, day_of_week=1,
+                                lesson_number=1, start_time=time(12, 20), end_time=time(13, 50))
+        result = self.generate()
+        self.assertEqual((result.status, result.fixed_pd_count), ("SOLVED", 1))
+        self.assertEqual(ScheduledClass.objects.get(run_id=result.run_id).slot.day_of_week, 1)
 
     def test_unrelated_group_can_use_same_slot_and_university_room(self):
         self.only_slots(2)

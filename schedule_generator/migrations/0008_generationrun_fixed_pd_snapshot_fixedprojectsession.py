@@ -8,7 +8,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('schedule_generator', '0002_building_campus_curriculum_curriculumentry_module_and_more'),
+        ('schedule_generator', '0007_location_remove_room_campus_ptr_and_more'),
     ]
 
     operations = [

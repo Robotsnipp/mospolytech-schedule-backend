@@ -17,7 +17,7 @@
 есть модульные занятия, модуль обязателен. Сетка `WeekPattern` пока общая
 для семестра; результат остаётся недельным шаблоном, а не календарём дат.
 
-Аудитории связаны с корпусами (`Building`) и площадками (`Campus`).
+Аудитории связаны с корпусами (`Building`) и локациями (`Location`).
 `is_active=False` исключает помещение из генерации. Тип и оборудование
 пока информационные поля; ограничения по оборудованию, переходам и выбор
 преподавателей не реализованы.
@@ -33,7 +33,7 @@
 ```sh
 SECRET_KEY=local-test-only DB_ENGINE=sqlite python manage.py migrate
 SECRET_KEY=local-test-only DB_ENGINE=sqlite python manage.py test schedule_generator
-SECRET_KEY=local-test-only DB_ENGINE=sqlite python manage.py generate_demo_schedule --time-limit 3
+SECRET_KEY=local-test-only DB_ENGINE=sqlite python manage.py generate_demo_schedule --time-limit 60
 ```
 
 Тесты проверяют реальный решатель, фильтрацию модуля, отключённые аудитории,
@@ -48,7 +48,7 @@ SECRET_KEY=local-test-only DB_ENGINE=sqlite python manage.py generate_demo_sched
 время людей, без выбора аудитории Политеха. Университетскую комнату нужно
 сопоставить явно; тогда её занятость тоже учитывается. Записи доступны в админке.
 
-После применения миграции `0003` импортируйте проверенный `pd.json` актуального
+После применения миграции `0008` импортируйте проверенный `pd.json` актуального
 парсера. В отдельном файле сопоставлений укажите SHA-256 из `pd.json`, номера
 строк проектов источника и **существующие ID** приложения. Например:
 
@@ -147,6 +147,10 @@ push: серверная защита настраивается на GitHub.
 
 Разбор расписания ПД и физкультуры с JSON/CSV и страницей сверки:
 [prototypes/activity_parser](prototypes/activity_parser/README.md).
+
+Сквозное офлайн-демо: фиксированная ПД, генерация общего расписания и
+персональные варианты для четырёх синтетических студентов:
+[prototypes/pd_schedule_demo](prototypes/pd_schedule_demo/README.md).
 
 Парсеры сами не пишут в БД. Проверенная ПД подключается отдельной командой выше;
 импорт учебного плана и физкультуры в генератор пока не реализован.
