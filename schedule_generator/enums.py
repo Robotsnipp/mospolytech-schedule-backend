@@ -40,6 +40,14 @@ class Format(models.TextChoices):
     ONLINE = ("ONLINE", "Онлайн")
 
 
+class Chronotype(models.TextChoices):
+    """Хронотип преподавателя: в какое время дня ему удобнее вести пары."""
+
+    EARLY = ("EARLY", "Жаворонок")
+    NEUTRAL = ("NEUTRAL", "Без предпочтений")
+    LATE = ("LATE", "Сова")
+
+
 # Типы занятий, которые вообще не участвуют в генерации расписания.
 NON_GENERATED_LESSON_TYPES = {LessonType.PE}
 

@@ -26,6 +26,7 @@
 from __future__ import annotations
 
 from django.core.exceptions import ValidationError
+from django.db.models import Q
 
 from ..enums import LessonType
 from ..models import (
@@ -36,7 +37,7 @@ from ..models import (
     Teacher,
     TimeSlot,
 )
-from .config import SolverConfig
+from .config import PlanningPreferences, SolverConfig
 from .curriculum import validate_prepared_load
 from .dto import RunOutcome
 from .event_specs import build_event_specs
@@ -52,15 +53,27 @@ class GenerationError(Exception):
 def load_teacher_limits() -> dict[int, dict]:
     """Справка о преподавателях для мягких ограничений модели."""
     return {
-        teacher.id: {"max_pairs_per_day": teacher.max_pairs_per_day}
+        teacher.id: {"max_pairs_per_day": teacher.max_pairs_per_day,
+                     "chronotype": teacher.chronotype}
         for teacher in Teacher.objects.all()
     }
 
 
+def select_events(semester, module=None):
+    """События периода: общие для семестра и, если задан модуль, его модульные."""
+    events = LessonEvent.objects.filter(semester=semester)
+    if module is not None:
+        events = events.filter(Q(module=module) | Q(module__isnull=True))
+    return events
+
+
 def run_generation(*, semester, week_pattern=None, time_limit_seconds=30,
-                   seed=17, clear_previous=True, module=None) -> RunOutcome:
+                   seed=17, clear_previous=True, module=None,
+                   free_days_per_group=0) -> RunOutcome:
     """Запускает полный цикл генерации недельного шаблона расписания.
 
+    :param free_days_per_group: режим подготовки к сессии — сколько дней в
+        неделю желательно оставить группам свободными (0 — режим выключен).
     :return: RunOutcome с id созданного GenerationRun и сводкой.
     :raises GenerationError: если семестру нечем строить расписание
         (нет WeekPattern) — run остаётся в статусе ERROR с сообщением.
@@ -89,10 +102,7 @@ def run_generation(*, semester, week_pattern=None, time_limit_seconds=30,
                      .order_by("day_of_week", "lesson_number"))
         rooms = list(Room.objects.filter(is_active=True)
                      .select_related("building", "building__location"))  # правило локаций
-        events = LessonEvent.objects.filter(semester=semester)
-        if module is not None:
-            from django.db.models import Q
-            events = events.filter(Q(module=module) | Q(module__isnull=True))
+        events = select_events(semester, module)
 
         # --- 4. подготовка событий ---
         try:
@@ -114,6 +124,7 @@ def run_generation(*, semester, week_pattern=None, time_limit_seconds=30,
             slots=slots, rooms=rooms, specs=specs,
             teachers_by_id=load_teacher_limits(), config=solver_config,
             fixed_pd=fixed_pd,
+            preferences=PlanningPreferences(free_days_per_group=free_days_per_group),
         )
 
         # --- 6. сохранение ---

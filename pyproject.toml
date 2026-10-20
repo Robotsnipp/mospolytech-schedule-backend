@@ -8,6 +8,7 @@ authors = [
 ]
 requires-python = ">=3.11"
 dependencies = [
+    "django-cors-headers>=4.4.0",
     "django-environ>=0.14.0",
     "django-extensions>=4.1",
     "djangorestframework>=3.18.1",

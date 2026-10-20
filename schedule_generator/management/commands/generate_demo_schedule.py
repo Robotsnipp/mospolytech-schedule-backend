@@ -24,6 +24,7 @@ from django.core.management.base import BaseCommand
 from django.db import transaction
 
 from schedule_generator.enums import (
+    Chronotype,
     Format,
     LessonType,
 )
@@ -197,9 +198,12 @@ class Command(BaseCommand):
                           "room_type": "лекционный зал"})
 
         # ---- преподаватели ----
+        # хронотипы чередуются, чтобы мягкое правило было видно на демо-данных
+        chronotypes = [Chronotype.NEUTRAL, Chronotype.EARLY, Chronotype.LATE]
         for teacher_index in range(1, teachers + 1):
             Teacher.objects.get_or_create(
-                full_name=f"Преподаватель {teacher_index}")
+                full_name=f"Преподаватель {teacher_index}",
+                defaults={"chronotype": chronotypes[teacher_index % len(chronotypes)]})
         teacher_list = list(Teacher.objects.order_by("id"))
 
         # ---- учебные группы: обычные, перваки и группа ПИ из старого демо ----

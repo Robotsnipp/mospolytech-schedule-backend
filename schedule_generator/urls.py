@@ -9,6 +9,9 @@
 - результаты генерации (read-only): runs (+classes/issues), scheduled-classes,
   issues;
 - просмотр расписания: schedule/groups|streams|teachers|students;
+- schedule/common-free-slots, schedule/free-rooms — общие окна студентов и
+  свободные аудитории; runs/<id>/wellbeing — усталость и окна запуска;
+- POST /api/schedule/replan/ — минимальная перестройка после сбоя;
 - POST /api/schedule/generate/ — запуск решателя (action viewset'а
   GenerateViewSet; url_path="generate" даёт ровно "/generate/", без повтора
   сегмента — совместимость с прежним APIView-маршрутом).
@@ -18,10 +21,13 @@ from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
 from .api.imported import ImportedTeacherViewSet
+from .api.pe import PEDirectionViewSet, PEEnrollmentViewSet, PESlotViewSet
 from .api.views import (
     BuildingViewSet,
+    CommonFreeSlotsViewSet,
     CurriculumEntryViewSet,
     CurriculumViewSet,
+    FreeRoomsViewSet,
     GenerateViewSet,
     GenerationIssueViewSet,
     GenerationRunViewSet,
@@ -33,6 +39,7 @@ from .api.views import (
     ModuleViewSet,
     ProjectEnrollmentViewSet,
     ProjectViewSet,
+    ReplanViewSet,
     RoomViewSet,
     ScheduledClassViewSet,
     SemesterViewSet,
@@ -70,6 +77,11 @@ router.register("project-enrollments", ProjectEnrollmentViewSet,
                 basename="project-enrollment")
 router.register("events", LessonEventViewSet, basename="event")
 
+# --- Физкультура ----------------------------------------------------------
+router.register("pe/directions", PEDirectionViewSet, basename="pe-direction")
+router.register("pe/slots", PESlotViewSet, basename="pe-slot")
+router.register("pe/enrollments", PEEnrollmentViewSet, basename="pe-enrollment")
+
 # --- Результаты генерации (read-only) ---------------------------------------
 router.register("runs", GenerationRunViewSet, basename="schedule-run")
 router.register("scheduled-classes", ScheduledClassViewSet,
@@ -81,6 +93,12 @@ router.register("schedule/groups", GroupScheduleViewSet, basename="schedule-grou
 router.register("schedule/streams", StreamScheduleViewSet, basename="schedule-stream")
 router.register("schedule/teachers", TeacherScheduleViewSet, basename="schedule-teacher")
 router.register("schedule/students", StudentScheduleViewSet, basename="schedule-student")
+router.register("schedule/common-free-slots", CommonFreeSlotsViewSet,
+                basename="schedule-common-free-slots")
+router.register("schedule/free-rooms", FreeRoomsViewSet, basename="schedule-free-rooms")
+
+# --- Перепланирование после сбоя ----------------------------------------------
+router.register("replan", ReplanViewSet, basename="schedule-replan")
 
 # --- Запуск генерации ---------------------------------------------------------
 # url_path="generate" у action сам по себе даёт "/{prefix}/generate/",

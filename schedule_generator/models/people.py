@@ -5,6 +5,8 @@ import re
 from django.core.exceptions import ValidationError
 from django.db import models
 
+from ..enums import Chronotype
+
 # Формат названия учебной группы: год зачисления (2 цифры) + дефис + номер группы.
 # Пример: «241-334» — 24 — год зачисления, 1 — дополнительный признак,
 # 334 — номер группы. Всего в названии не более 6 цифр.
@@ -127,6 +129,11 @@ class Teacher(models.Model):
                                       blank=True, default="", db_index=True)
     max_pairs_per_day = models.PositiveSmallIntegerField("Макс. пар в день", default=4)
     max_pairs_per_week = models.PositiveSmallIntegerField("Макс. пар в неделю", default=20)
+    chronotype = models.CharField(
+        "Хронотип", max_length=10, choices=Chronotype.choices, default=Chronotype.NEUTRAL,
+        help_text="Мягкое пожелание: жаворонку не ставят поздние пары, "
+                  "сове — ранние. Не отменяет размещения нагрузки.",
+    )
 
     class Meta:
         verbose_name = "Преподаватель"
