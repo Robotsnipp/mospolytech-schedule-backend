@@ -16,13 +16,21 @@ Including another URLconf
 """
 from django.conf import settings
 from django.contrib import admin
+from django.http import JsonResponse
 from django.urls import include, path
 from drf_spectacular.views import (
     SpectacularAPIView,
     SpectacularSwaggerView,
 )
 
+
+def health(request):
+    return JsonResponse({'status': 'ok'})
+
+
 urlpatterns = [
+    path('health', health, name='health'),
+    path('health/', health),
     path('admin/', admin.site.urls),
     path('api/schedule/', include('schedule_generator.urls')),
     path('api/schema/', SpectacularAPIView.as_view(), name='schema'),

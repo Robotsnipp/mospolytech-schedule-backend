@@ -62,6 +62,7 @@ from ..services.schedule_queries import (
     student_holder_filter,
 )
 from ..services.social import common_free_slots
+from .permissions import IsAdminOrReadOnly
 from .serializers import (
     BuildingSerializer,
     CommonFreeSlotsFilterSerializer,
@@ -110,6 +111,13 @@ class CrudViewSet(viewsets.ModelViewSet):
 
     search_fields: list[str] = []
     ordering: list[str] = ["id"]
+    # Справочники, нужные фронтенду без входа: чтение открыто, запись — админам.
+    public_read = False
+
+    def get_permissions(self):
+        if self.public_read:
+            return [IsAdminOrReadOnly()]
+        return super().get_permissions()
 
     def get_queryset(self):
         return self.queryset.all().order_by(*self.ordering)
@@ -130,6 +138,7 @@ class CrudViewSet(viewsets.ModelViewSet):
 )
 class SemesterViewSet(CrudViewSet):
     """Семестры: учебные периоды с датой начала и числом недель."""
+    public_read = True
 
     queryset = Semester.objects.all()
     serializer_class = SemesterSerializer
@@ -149,6 +158,7 @@ class SemesterViewSet(CrudViewSet):
 )
 class WeekPatternViewSet(CrudViewSet):
     """Шаблоны недели (сетки пар) семестра; чётная/нечётная — разные паттерны."""
+    public_read = True
 
     queryset = WeekPattern.objects.select_related("semester")
     serializer_class = WeekPatternSerializer
@@ -174,6 +184,7 @@ class WeekPatternViewSet(CrudViewSet):
 )
 class TimeSlotViewSet(CrudViewSet):
     """Слоты недельной сетки: день недели + номер пары + время."""
+    public_read = True
 
     queryset = TimeSlot.objects.select_related("week_pattern")
     serializer_class = TimeSlotSerializer
@@ -199,6 +210,7 @@ class TimeSlotViewSet(CrudViewSet):
 )
 class ModuleViewSet(CrudViewSet):
     """Календарные модули: даты и число учебных недель внутри семестра."""
+    public_read = True
 
     queryset = Module.objects.select_related("semester")
     serializer_class = ModuleSerializer
@@ -232,6 +244,7 @@ class ModuleViewSet(CrudViewSet):
 )
 class GroupViewSet(CrudViewSet):
     """Учебные группы и группы ДПО."""
+    public_read = True
 
     queryset = Group.objects.select_related("semester", "curriculum") \
         .annotate(students_count=Count("students"))
@@ -261,6 +274,7 @@ class GroupViewSet(CrudViewSet):
 )
 class StudentViewSet(CrudViewSet):
     """Студенты (слушатели) учебных групп."""
+    public_read = True
 
     queryset = Student.objects.select_related("group")
     serializer_class = StudentSerializer
@@ -285,6 +299,7 @@ class StudentViewSet(CrudViewSet):
 )
 class TeacherViewSet(CrudViewSet):
     """Преподаватели с лимитами нагрузки (пар в день/неделю)."""
+    public_read = True
 
     queryset = Teacher.objects.all()
     serializer_class = TeacherSerializer
@@ -306,6 +321,7 @@ class TeacherViewSet(CrudViewSet):
 )
 class SubjectViewSet(CrudViewSet):
     """Дисциплины (предметы)."""
+    public_read = True
 
     queryset = Subject.objects.all()
     serializer_class = SubjectSerializer
@@ -323,6 +339,7 @@ class SubjectViewSet(CrudViewSet):
 )
 class LocationViewSet(CrudViewSet):
     """Учебные локации (адреса; между локациями — час езды)."""
+    public_read = True
 
     queryset = Location.objects.all()
     serializer_class = LocationSerializer
@@ -342,6 +359,7 @@ class LocationViewSet(CrudViewSet):
 )
 class BuildingViewSet(CrudViewSet):
     """Учебные корпуса на локациях."""
+    public_read = True
 
     queryset = Building.objects.select_related("location")
     serializer_class = BuildingSerializer
@@ -371,6 +389,7 @@ class BuildingViewSet(CrudViewSet):
 )
 class RoomViewSet(CrudViewSet):
     """Аудитории: вместимость, оборудование, доступность для генерации."""
+    public_read = True
 
     queryset = Room.objects.select_related("building", "building__location")
     serializer_class = RoomSerializer

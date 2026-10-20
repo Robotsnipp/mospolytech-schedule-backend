@@ -20,6 +20,7 @@
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
+from .api.pe import PEDirectionViewSet, PEEnrollmentViewSet, PESlotViewSet
 from .api.views import (
     BuildingViewSet,
     CommonFreeSlotsViewSet,
@@ -73,6 +74,11 @@ router.register("projects", ProjectViewSet, basename="project")
 router.register("project-enrollments", ProjectEnrollmentViewSet,
                 basename="project-enrollment")
 router.register("events", LessonEventViewSet, basename="event")
+
+# --- Физкультура ----------------------------------------------------------
+router.register("pe/directions", PEDirectionViewSet, basename="pe-direction")
+router.register("pe/slots", PESlotViewSet, basename="pe-slot")
+router.register("pe/enrollments", PEEnrollmentViewSet, basename="pe-enrollment")
 
 # --- Результаты генерации (read-only) ---------------------------------------
 router.register("runs", GenerationRunViewSet, basename="schedule-run")
