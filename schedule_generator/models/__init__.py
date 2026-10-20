@@ -22,7 +22,9 @@
 
 from .calendar import Module, Semester, TimeSlot, WeekPattern
 from .curriculum import Curriculum, CurriculumEntry, StudyForm
+from .fixed_pd import FixedProjectSession
 from .generation import GenerationIssue, GenerationRun
+from .imported_schedule import ImportedGroupSchedule, ImportedLesson, ScheduleImport
 from .lessons import LessonEvent, ScheduledClass
 from .pe import PEDirection, PEEnrollment, PESlot
 from .people import Group, Student, Teacher
@@ -30,7 +32,10 @@ from .projects import Project, ProjectEnrollment
 from .resources import Building, LectureStream, Location, Room, Subject
 
 __all__ = [
-    "PEDirection", "PEEnrollment", "PESlot", "Module", "Curriculum", "CurriculumEntry", "StudyForm", "Location", "Building",
+    "ImportedGroupSchedule", "ImportedLesson", "ScheduleImport",
+    "FixedProjectSession",
+    "Module", "Curriculum", "CurriculumEntry", "StudyForm", "Location", "Building",
+    "PEDirection", "PEEnrollment", "PESlot",
     "GenerationIssue",
     "GenerationRun",
     "Group",

@@ -1,6 +1,7 @@
 """Подготовка событий к генерации: LessonEvent (ORM) -> EventSpec (модель).
 
-Это единственный модуль генерации, который читает ORM-данные о занятиях.
+Здесь читаются ORM-данные о генерируемых занятиях; фиксированную ПД загружает
+services/fixed_pd.py.
 Правила отбора/валидации событий сосредоточены здесь; при добавлении нового
 типа занятия правки сводятся к этому файлу + enums.py (+ ограничения модели,
 если меняется семантика блокировок).
@@ -42,6 +43,7 @@ def build_event_specs(events) -> tuple[list[EventSpec], list[tuple]]:
         blocking_group_ids: set[int] = set()
         blocking_student_ids: set[int] = set()
         stream_id = None
+        participant_group_ids = set()
 
         if event.lesson_type == LessonType.LECTURE:
             if not event.stream_id:
@@ -60,10 +62,12 @@ def build_event_specs(events) -> tuple[list[EventSpec], list[tuple]]:
             # ПД: группа проекта = студенты, выбравшие проект.
             # Блокируем именно этих студентов (а не целиком их учебные
             # группы), чтобы остальные студенты тех же групп могли учиться.
-            blocking_student_ids = set(
+            participants = list(
                 Student.objects.filter(project_choice__project_id=event.project_id)
-                .values_list("id", flat=True)
+                .values_list("id", "group_id")
             )
+            blocking_student_ids = {student_id for student_id, _ in participants}
+            participant_group_ids = {group_id for _, group_id in participants}
             audience_size = event.audience_size or len(blocking_student_ids)
             if not blocking_student_ids:
                 # никто не выбрал проект — планировать не для кого
@@ -84,11 +88,21 @@ def build_event_specs(events) -> tuple[list[EventSpec], list[tuple]]:
             format=lesson_format,
             pairs_per_week=event.pairs_per_week,
             audience_size=max(audience_size, 1),
-            teacher_id=event.teacher_id,
+            teacher_id=event.teacher_id or (event.project.supervisor_id if event.project_id else None),
             blocking_group_ids=blocking_group_ids,
             blocking_student_ids=blocking_student_ids,
             stream_id=stream_id,
+            participant_group_ids=participant_group_ids,
+
             # правила размещения по дням (ПД — пн/ср, остальное — вт/чт/пт/сб)
             allowed_days=allowed_days_for(event.lesson_type),
         ))
+    group_ids = {group_id for spec in specs for group_id in spec.blocking_group_ids}
+    students_by_group = {}
+    for student_id, group_id in Student.objects.filter(group_id__in=group_ids).values_list("id", "group_id"):
+        students_by_group.setdefault(group_id, set()).add(student_id)
+    for spec in specs:
+        spec.attending_student_ids = set(spec.blocking_student_ids)
+        for group_id in spec.blocking_group_ids:
+            spec.attending_student_ids.update(students_by_group.get(group_id, ()))
     return specs, skipped

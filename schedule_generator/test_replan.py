@@ -1,6 +1,6 @@
 """Самовосстановление расписания (фича 14) на реальном решателе CP-SAT."""
 
-from datetime import date
+from datetime import date, time
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
@@ -8,9 +8,12 @@ from rest_framework.test import APIClient
 
 from schedule_generator.enums import LessonType
 from schedule_generator.models import (
+    FixedProjectSession,
     GenerationRun,
     Group,
     LessonEvent,
+    Project,
+    ProjectEnrollment,
     Room,
     ScheduledClass,
     Semester,
@@ -77,6 +80,30 @@ class TeacherDisruptionTests(ReplanTestCase):
         ).values_list("slot__day_of_week", flat=True)
         self.assertEqual(len(teacher_days), 2)
         self.assertNotIn(self.sick_day, teacher_days)
+
+    def test_replan_preserves_fixed_pd_snapshot_and_student_conflicts(self):
+        times = {2: (time(10, 40), time(12, 10)), 3: (time(12, 20), time(13, 50)),
+                 4: (time(14, 30), time(16))}
+        for slot in TimeSlot.objects.all():
+            slot.start_time, slot.end_time = times[slot.lesson_number]
+            slot.save(update_fields=["start_time", "end_time"])
+        supervisor = Teacher.objects.create(full_name="PD supervisor")
+        project = Project.objects.create(semester=self.semester, title="Fixed project", supervisor=supervisor)
+        student = Student.objects.create(group=self.group_a, full_name="Participant")
+        ProjectEnrollment.objects.create(student=student, project=project)
+        FixedProjectSession.objects.create(project=project, day_of_week=TUESDAY,
+                                            start_time=time(10, 40), end_time=time(12, 10),
+                                            teacher=supervisor, room=self.rooms[0], travel_buffer_minutes=0,
+                                            place_details={"raw": self.rooms[0].name}, source_key="merge-test")
+        original = run_generation(semester=self.semester, time_limit_seconds=5, clear_previous=False)
+        run = GenerationRun.objects.get(pk=original.run_id)
+        first = run.scheduled_classes.filter(event__teacher=self.teacher).select_related("slot").first()
+        outcome = replan_after_disruption(run=run, teacher=self.teacher,
+                                          unavailable_days=[first.slot.day_of_week], time_limit_seconds=5)
+        replanned = GenerationRun.objects.get(pk=outcome.run_id)
+        self.assertEqual(len(replanned.fixed_pd_snapshot), 1)
+        self.assertFalse(replanned.scheduled_classes.filter(event__group=self.group_a,
+                          slot__day_of_week=TUESDAY, slot__lesson_number=2).exists())
 
     def test_untouched_pairs_stay_exactly_where_they_were(self):
         old = ScheduledClass.objects.filter(run=self.run_obj).select_related("slot")

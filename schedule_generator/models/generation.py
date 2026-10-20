@@ -22,6 +22,7 @@ class GenerationRun(models.Model):
     objective_value = models.IntegerField("Значение целевой функции", null=True, blank=True)
     solve_time_seconds = models.FloatField("Время решения (сек)", null=True, blank=True)
     message = models.TextField("Сообщение", blank=True)
+    fixed_pd_snapshot = models.JSONField("Учтённые фиксированные занятия ПД", default=list, blank=True)
 
     class Meta:
         verbose_name = "Запуск генерации"

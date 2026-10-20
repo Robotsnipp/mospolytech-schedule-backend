@@ -18,6 +18,7 @@ class Curriculum(models.Model):
     duration_months = models.PositiveSmallIntegerField("Срок обучения, месяцев", validators=[MinValueValidator(1)])
     version = models.CharField("Версия", max_length=50, default="1")
     source_file = models.FileField("Исходный план", upload_to="curricula/", blank=True)
+    source = models.JSONField("Происхождение импорта", default=dict, blank=True)
 
     class Meta:
         verbose_name = "Учебный план"
@@ -33,13 +34,15 @@ class CurriculumEntry(models.Model):
     subject = models.ForeignKey("schedule_generator.Subject", on_delete=models.PROTECT, related_name="curriculum_entries")
     discipline_code = models.CharField("Код строки плана", max_length=50)
     semester_number = models.PositiveSmallIntegerField("Семестр обучения", validators=[MinValueValidator(1)])
-    lecture_hours = models.PositiveIntegerField("Часы лекций", default=0)
-    practice_hours = models.PositiveIntegerField("Часы семинаров", default=0)
-    lab_hours = models.PositiveIntegerField("Часы лабораторных", default=0)
-    independent_hours = models.PositiveIntegerField("Самостоятельная работа", default=0)
-    has_exam = models.BooleanField("Экзамен", default=False)
-    has_credit = models.BooleanField("Зачёт", default=False)
-    has_graded_credit = models.BooleanField("Дифференцированный зачёт", default=False)
+    contact_hours = models.PositiveIntegerField("Аудиторные часы семестра", null=True, blank=True)
+    lecture_hours = models.PositiveIntegerField("Часы лекций", default=0, null=True, blank=True)
+    practice_hours = models.PositiveIntegerField("Часы семинаров", default=0, null=True, blank=True)
+    lab_hours = models.PositiveIntegerField("Часы лабораторных", default=0, null=True, blank=True)
+    independent_hours = models.PositiveIntegerField("Самостоятельная работа", default=0, null=True, blank=True)
+    has_exam = models.BooleanField("Экзамен", default=False, null=True, blank=True)
+    has_credit = models.BooleanField("Зачёт", default=False, null=True, blank=True)
+    has_graded_credit = models.BooleanField("Дифференцированный зачёт", default=False, null=True, blank=True)
+    source = models.JSONField("Строка источника и проверка", default=dict, blank=True)
 
     class Meta:
         verbose_name = "Семестровая нагрузка плана"

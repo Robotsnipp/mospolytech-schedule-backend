@@ -54,10 +54,18 @@ class LessonEvent(models.Model):
     curriculum_entry = models.ForeignKey("schedule_generator.CurriculumEntry", on_delete=models.PROTECT, null=True, blank=True, related_name="events")
     pairs_per_week = models.PositiveSmallIntegerField("Пар в неделю", default=1)
     audience_size = models.PositiveSmallIntegerField("Слушателей", default=25)
+    academic_hours = models.PositiveIntegerField("Академических часов в модуле", null=True, blank=True)
+    prepared_for_group = models.ForeignKey(
+        "schedule_generator.Group", on_delete=models.PROTECT, null=True, blank=True,
+        related_name="prepared_events", verbose_name="Группа подготовки нагрузки")
+    preparation_source = models.JSONField("Основание подготовки нагрузки", default=dict, blank=True)
 
     class Meta:
         verbose_name = "Занятие (план)"
         verbose_name_plural = "Занятия (план)"
+        constraints = [models.UniqueConstraint(
+            fields=["prepared_for_group", "curriculum_entry", "module", "lesson_type"],
+            condition=models.Q(prepared_for_group__isnull=False), name="uniq_prepared_module_load")]
 
     def __str__(self):
         holder = self.group or self.stream or self.project

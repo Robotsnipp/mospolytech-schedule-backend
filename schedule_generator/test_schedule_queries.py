@@ -84,7 +84,7 @@ class GroupAndStudentScheduleTests(ScheduleReadTestCase):
     def test_group_schedule_includes_lectures_of_its_streams(self):
         response = self.get(f"schedule/groups/{self.group_a.pk}/")
         self.assertEqual(response.status_code, 200, response.content)
-        self.assertEqual({item["event"] for item in response.json()},
+        self.assertEqual({item["event"] for item in response.json()["scheduled_classes"]},
                          set(ScheduledClass.objects.filter(
                              event__group=self.group_a).values_list("event_id", flat=True))
                          | {self.lecture.pk})
@@ -92,7 +92,7 @@ class GroupAndStudentScheduleTests(ScheduleReadTestCase):
     def test_group_without_stream_gets_only_its_own_pairs(self):
         response = self.get(f"schedule/groups/{self.group_b.pk}/")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(response.json()), 1)
+        self.assertEqual(len(response.json()["scheduled_classes"]), 1)
 
     def test_student_schedule_works_with_and_without_project(self):
         self.assertEqual(self.get(f"schedule/students/{self.student_a.pk}/").status_code, 200)
@@ -102,10 +102,10 @@ class GroupAndStudentScheduleTests(ScheduleReadTestCase):
         ScheduledClass.objects.create(event=self.pd_event, slot=self.slots[(TUESDAY, 3)],
                                       room=self.room_big, run=self.solved_run)
         events = {item["event"] for item in
-                  self.get(f"schedule/students/{self.student_b.pk}/").json()}
+                  self.get(f"schedule/students/{self.student_b.pk}/").json()["scheduled_classes"]}
         self.assertIn(self.pd_event.pk, events)
         events_a = {item["event"] for item in
-                    self.get(f"schedule/students/{self.student_a.pk}/").json()}
+                    self.get(f"schedule/students/{self.student_a.pk}/").json()["scheduled_classes"]}
         self.assertNotIn(self.pd_event.pk, events_a)
 
 

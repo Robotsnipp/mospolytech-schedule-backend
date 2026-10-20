@@ -24,10 +24,13 @@
 
 from __future__ import annotations
 
-from django.db.models import Count, Q
+from django.core.exceptions import ValidationError
+from django.db.models import Count, Prefetch
+from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_view
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import ValidationError as APIValidationError
 from rest_framework.response import Response
 
 from ..models import (
@@ -53,16 +56,28 @@ from ..models import (
     WeekPattern,
 )
 from ..services import GenerationError, run_generation
+from ..services.curriculum import (
+    CurriculumDataError,
+    import_curriculum,
+    prepare_module_load,
+)
 from ..services.replan import ReplanError, replan_after_disruption
 from ..services.rooms import free_rooms, slot_at, university_now
 from ..services.run_report import build_wellbeing_report
-from ..services.schedule_queries import (
-    group_holder_filter,
-    scheduled_classes_for,
-    student_holder_filter,
+from ..services.schedule_read import (
+    read_schedule,
+    resolve_schedule_run,
+    with_schedule_details,
 )
 from ..services.social import common_free_slots
 from .permissions import IsAdminOrReadOnly
+from .preparation import (
+    CurriculumImportRequestSerializer,
+    CurriculumImportResultSerializer,
+    ModuleLoadRequestSerializer,
+    ModuleLoadResultSerializer,
+)
+from .schedule import ScheduleResponseSerializer
 from .serializers import (
     BuildingSerializer,
     CommonFreeSlotsFilterSerializer,
@@ -85,6 +100,7 @@ from .serializers import (
     ReplanResultSerializer,
     RoomSerializer,
     ScheduledClassSerializer,
+    ScheduleFilterSerializer,
     SemesterSerializer,
     StudentSerializer,
     SubjectSerializer,
@@ -250,6 +266,19 @@ class GroupViewSet(CrudViewSet):
         .annotate(students_count=Count("students"))
     serializer_class = GroupSerializer
     search_fields = ["name"]
+
+    @extend_schema(summary="Подготовить нагрузку группы в модуле", tags=["Учебные планы"],
+                   request=ModuleLoadRequestSerializer, responses={200: ModuleLoadResultSerializer})
+    @action(detail=True, methods=["post"], url_path="prepare-load")
+    def prepare_load(self, request, pk=None):
+        group = self.get_object()
+        serializer = ModuleLoadRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            result = prepare_module_load(group=group, **serializer.validated_data)
+        except (CurriculumDataError, ValidationError) as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(result)
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -459,6 +488,18 @@ class CurriculumViewSet(CrudViewSet):
     serializer_class = CurriculumSerializer
     search_fields = ["name", "program_code", "profile"]
 
+    @extend_schema(summary="Импортировать проверенный JSON учебного плана", tags=["Учебные планы"],
+                   request=CurriculumImportRequestSerializer, responses={200: CurriculumImportResultSerializer})
+    @action(detail=False, methods=["post"], url_path="import")
+    def import_plan(self, request):
+        serializer = CurriculumImportRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            result = import_curriculum(**serializer.validated_data)
+        except (CurriculumDataError, ValidationError) as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(result)
+
     def get_queryset(self):
         qs = super().get_queryset()
         params = self.request.query_params
@@ -623,10 +664,7 @@ class LessonEventViewSet(CrudViewSet):
 class ScheduledClassViewSet(viewsets.ReadOnlyModelViewSet):
     """ScheduledClass — результат генерации: пара в слот и аудиторию."""
 
-    queryset = (ScheduledClass.objects
-                .select_related("slot", "room", "event", "event__subject",
-                                "event__group", "event__stream",
-                                "event__project", "event__teacher"))
+    queryset = with_schedule_details(ScheduledClass.objects.all())
     serializer_class = ScheduledClassSerializer
 
     def get_queryset(self):
@@ -645,7 +683,7 @@ class ScheduledClassViewSet(viewsets.ReadOnlyModelViewSet):
 
 @extend_schema_view(
     list=extend_schema(summary="История запусков генерации", tags=["Генерация"],
-                       parameters=[SEMESTER_PARAM]),
+                       parameters=[SEMESTER_PARAM, MODULE_PARAM]),
     retrieve=extend_schema(summary="Запуск генерации с полным результатом",
                            tags=["Генерация"]),
 )
@@ -662,11 +700,18 @@ class GenerationRunViewSet(viewsets.ReadOnlyModelViewSet):
 
     def get_queryset(self):
         qs = (super().get_queryset()
-              .annotate(classes_count=Count("scheduled_classes"),
-                        issues_count=Count("issues")))
-        semester = self.request.query_params.get("semester")
-        if semester:
-            qs = qs.filter(semester_id=semester)
+              .annotate(classes_count=Count("scheduled_classes", distinct=True),
+                        issues_count=Count("issues", distinct=True))
+              .order_by("-created_at", "-pk"))
+        filters = ScheduleFilterSerializer(data=self.request.query_params)
+        filters.is_valid(raise_exception=True)
+        for key in ("semester", "module"):
+            if value := filters.validated_data.get(key):
+                qs = qs.filter(**{key: value})
+        if self.action == "retrieve":
+            qs = qs.prefetch_related(
+                Prefetch("scheduled_classes", queryset=with_schedule_details(ScheduledClass.objects.all())),
+                "issues")
         return qs
 
     @extend_schema(
@@ -676,10 +721,7 @@ class GenerationRunViewSet(viewsets.ReadOnlyModelViewSet):
     @action(detail=True, methods=["get"], url_path="classes")
     def classes(self, request, pk=None):
         run = self.get_object()
-        classes = (run.scheduled_classes
-                   .select_related("slot", "room", "event", "event__subject",
-                                   "event__group", "event__stream",
-                                   "event__project", "event__teacher"))
+        classes = with_schedule_details(run.scheduled_classes.all())
         return Response(ScheduledClassSerializer(classes, many=True).data)
 
     @extend_schema(
@@ -732,121 +774,77 @@ class GenerationIssueViewSet(viewsets.ReadOnlyModelViewSet):
 # ---------------------------------------------------------------------------
 
 class ScheduleReadViewSet(viewsets.ViewSet):
-    """Базовый viewset просмотра недельного шаблона для одного носителя.
-
-    Возвращает пары последнего успешного запуска периода (или запуска,
-    заданного параметром ``run``). Ответ — плоский список пар, готовый для
-    отрисовки сетки недели.
-    """
+    """Один запуск: общие пары и подходящая носителю фиксированная ПД."""
 
     permission_classes: list = []
+    lookup_value_regex = r"\d+"
 
-    def _filter_serializer(self):
-        return PatternScheduleFilterSerializer(data=self.request.query_params)
-
-    def _list_schedule(self, holder_filter: Q):
-        serializer = self._filter_serializer()
+    def _list_schedule(self, kind="all", holder=None):
+        serializer = PatternScheduleFilterSerializer(data=self.request.query_params)
         serializer.is_valid(raise_exception=True)
-        data = serializer.validated_data
-        classes = scheduled_classes_for(
-            semester=data["semester"],
-            holder_filter=holder_filter,
-            module=data.get("module"),
-            run_id=data.get("run"),
-            week_pattern_id=(data["week_pattern"].pk
-                             if data.get("week_pattern") else None),
-        )
-        return Response(ScheduledClassSerializer(classes, many=True).data)
+        try:
+            run = resolve_schedule_run(**serializer.validated_data)
+        except GenerationRun.DoesNotExist:
+            return Response({"detail": "Запуск генерации не найден."}, status=status.HTTP_404_NOT_FOUND)
+        except ValidationError as exc:
+            raise APIValidationError(exc.message_dict) from exc
+        result = read_schedule(run=run, kind=kind, holder=holder,
+                               week_pattern=serializer.validated_data.get("week_pattern"))
+        return Response(ScheduleResponseSerializer(
+            result, context={"holder_kind": kind, "holder": holder}).data)
 
 
 @extend_schema_view(
-    list=extend_schema(summary="Недельное расписание всех групп", tags=["Расписание"],
-                       parameters=[SEMESTER_PARAM, MODULE_PARAM, RUN_PARAM,
-                                   OpenApiParameter("week_pattern", int, required=False,
-                                                    description="Фильтр по шаблону недели.")],
-                       responses=ScheduledClassSerializer(many=True)),
-    retrieve=extend_schema(summary="Недельное расписание группы", tags=["Расписание"],
-                           parameters=[OpenApiParameter("id", int, description="ID группы."),
-                                       SEMESTER_PARAM, MODULE_PARAM, RUN_PARAM,
-                                       OpenApiParameter("week_pattern", int,
-                                                        required=False)],
-                           responses=ScheduledClassSerializer(many=True)),
+    list=extend_schema(operation_id="schedule_all_classes",
+                       summary="Все занятия одного запуска", tags=["Расписание"],
+                       parameters=[PatternScheduleFilterSerializer], responses=ScheduleResponseSerializer),
+    retrieve=extend_schema(summary="Расписание группы с ПД её участников", tags=["Расписание"],
+                           parameters=[PatternScheduleFilterSerializer,
+                                       OpenApiParameter("id", int, location=OpenApiParameter.PATH)],
+                           responses=ScheduleResponseSerializer),
 )
 class GroupScheduleViewSet(ScheduleReadViewSet):
-    """GET /api/schedule/schedule/groups/ и /groups/<group_id>/.
+    """ПД группы относится только к перечисленным студентам, не ко всей группе."""
 
-    list возвращает все пары периода (для сводной сетки), retrieve — расписание
-    одной группы: её очные пары, лекции её потоков, ПД и внеучебку.
-    """
-
-    @extend_schema(operation_id="schedule_all_classes",
-                   summary="Все пары недельного шаблона за период", tags=["Расписание"],
-                   parameters=[SEMESTER_PARAM, MODULE_PARAM, RUN_PARAM,
-                               OpenApiParameter("week_pattern", int, required=False,
-                                                description="Фильтр по шаблону недели.")],
-                   responses=ScheduledClassSerializer(many=True))
     def list(self, request):
-        return self._list_schedule(Q())
+        return self._list_schedule()
 
     def retrieve(self, request, pk=None):
-        return self._list_schedule(group_holder_filter(pk))
+        return self._list_schedule("group", get_object_or_404(Group, pk=pk))
 
 
 @extend_schema_view(
-    retrieve=extend_schema(summary="Недельное расписание лекционного потока",
-                           tags=["Расписание"],
-                           parameters=[OpenApiParameter("id", int, description="ID лекционного потока."),
-                                       SEMESTER_PARAM, MODULE_PARAM, RUN_PARAM,
-                                       OpenApiParameter("week_pattern", int,
-                                                        required=False)],
-                           responses=ScheduledClassSerializer(many=True)),
+    retrieve=extend_schema(summary="Расписание лекционного потока", tags=["Расписание"],
+                           parameters=[PatternScheduleFilterSerializer,
+                                       OpenApiParameter("id", int, location=OpenApiParameter.PATH)],
+                           responses=ScheduleResponseSerializer),
 )
 class StreamScheduleViewSet(ScheduleReadViewSet):
-    """GET /api/schedule/schedule/streams/<stream_id>/."""
-
     def retrieve(self, request, pk=None):
-        return self._list_schedule(Q(event__stream_id=pk))
+        return self._list_schedule("stream", get_object_or_404(LectureStream, pk=pk))
 
 
 @extend_schema_view(
-    retrieve=extend_schema(summary="Недельная нагрузка преподавателя",
-                           tags=["Расписание"],
-                           parameters=[OpenApiParameter("id", int, description="ID преподавателя."),
-                                       SEMESTER_PARAM, MODULE_PARAM, RUN_PARAM,
-                                       OpenApiParameter("week_pattern", int,
-                                                        required=False)],
-                           responses=ScheduledClassSerializer(many=True)),
+    retrieve=extend_schema(summary="Расписание преподавателя, включая ПД", tags=["Расписание"],
+                           parameters=[PatternScheduleFilterSerializer,
+                                       OpenApiParameter("id", int, location=OpenApiParameter.PATH)],
+                           responses=ScheduleResponseSerializer),
 )
 class TeacherScheduleViewSet(ScheduleReadViewSet):
-    """GET /api/schedule/schedule/teachers/<teacher_id>/."""
-
     def retrieve(self, request, pk=None):
-        return self._list_schedule(Q(event__teacher_id=pk))
+        return self._list_schedule("teacher", get_object_or_404(Teacher, pk=pk))
 
 
 @extend_schema_view(
-    retrieve=extend_schema(summary="Недельное расписание студента (через его ПД-проект)",
-                           tags=["Расписание"],
-                           parameters=[OpenApiParameter("id", int, description="ID студента."),
-                                       SEMESTER_PARAM, MODULE_PARAM, RUN_PARAM,
-                                       OpenApiParameter("week_pattern", int,
-                                                        required=False)],
-                           responses=ScheduledClassSerializer(many=True)),
+    retrieve=extend_schema(summary="Расписание студента, включая его ПД", tags=["Расписание"],
+                           parameters=[PatternScheduleFilterSerializer,
+                                       OpenApiParameter("id", int, location=OpenApiParameter.PATH)],
+                           responses=ScheduleResponseSerializer),
 )
 class StudentScheduleViewSet(ScheduleReadViewSet):
-    """GET /api/schedule/schedule/students/<student_id>/.
-
-    Расписание студента = расписание его учебной группы (включая потоковые
-    лекции) + очные пары ПД по выбранному проекту.
-    """
-
     def retrieve(self, request, pk=None):
-        student = Student.objects.select_related("group").filter(pk=pk).first()
-        if student is None:
-            return Response({"detail": "Студент не найден."},
-                            status=status.HTTP_404_NOT_FOUND)
-        holder_filter = student_holder_filter(student)
-        return self._list_schedule(holder_filter)
+        student = get_object_or_404(Student.objects.select_related("group"), pk=pk)
+        return self._list_schedule("student", student)
 
 
 @extend_schema_view(
@@ -868,7 +866,7 @@ class CommonFreeSlotsViewSet(ScheduleReadViewSet):
         data = serializer.validated_data
         slots = common_free_slots(
             semester=data["semester"], students=data["students"],
-            module=data.get("module"), run_id=data.get("run"),
+            module=data.get("module"), run_id=data.get("run_id"),
             week_pattern=data.get("week_pattern"))
         return Response(TimeSlotSerializer(slots, many=True).data)
 
@@ -890,6 +888,8 @@ class CommonFreeSlotsViewSet(ScheduleReadViewSet):
 )
 class FreeRoomsViewSet(ScheduleReadViewSet):
     """GET /api/schedule/schedule/free-rooms/."""
+
+    serializer_class = RoomSerializer
 
     def list(self, request):
         serializer = FreeRoomsFilterSerializer(data=request.query_params)
@@ -914,7 +914,7 @@ class FreeRoomsViewSet(ScheduleReadViewSet):
                                  "detail": "В это время пара не идёт или у слотов не задано время."})
 
         rooms = free_rooms(
-            semester=semester, slot=slot, module=data.get("module"), run_id=data.get("run"),
+            semester=semester, slot=slot, module=data.get("module"), run_id=data.get("run_id"),
             min_capacity=data.get("min_capacity"), location_id=data.get("location"))
         return Response({"slot": TimeSlotSerializer(slot).data,
                          "rooms": RoomSerializer(rooms, many=True).data})
@@ -932,13 +932,17 @@ class GenerateViewSet(viewsets.ViewSet):
     Что происходит внутри (детали — в services/generation.py):
     1. Берутся все LessonEvent семестра; физкультура (PE) исключается —
        она не генерируется (студент приходит в любое время/место).
-    2. Лекции планируются онлайн на потоки групп (один слот на поток),
+    2. Лекции планируются онлайн на потоки групп (число пар задано нагрузкой),
        практики/лаборатории — очно на группу, ПД — очно на студентов,
        выбравших проект, внеучебка — очно или онлайн (поле format).
-    3. CP-SAT размещает требуемые пары по слотам шаблона недели, выбирает
-       аудитории (вместимость >= размер аудитории), минимизирует окна и
-       перегрузку преподавателей.
-    4. Результат сохраняется как ScheduledClass + GenerationRun (+ Issues).
+    3. Фиксированная ПД блокирует время участников и преподавателя; известная
+       комната резервируется, остальные пары учитывают заданный буфер на дорогу.
+       Снимок ПД возвращается в fixed_pd_snapshot отдельно от scheduled_classes.
+    4. CP-SAT размещает требуемые пары по слотам шаблона недели, выбирает
+       аудитории (вместимость >= число слушателей). Сначала максимизируется
+       число пар, затем приоритет лекций; дальше уменьшается ожидание студентов
+       и преподавателей с учётом ПД и перегрузка преподавателей.
+    5. Результат сохраняется как ScheduledClass + GenerationRun (+ Issues).
     """
 
     permission_classes: list = []
@@ -960,7 +964,9 @@ class GenerateViewSet(viewsets.ViewSet):
         except GenerationError as exc:
             return Response({"detail": str(exc)},
                             status=status.HTTP_400_BAD_REQUEST)
-        run = GenerationRun.objects.get(pk=outcome.run_id)
+        run = GenerationRun.objects.prefetch_related(
+            Prefetch("scheduled_classes", queryset=with_schedule_details(ScheduledClass.objects.all())),
+            "issues").get(pk=outcome.run_id)
         return Response(GenerationRunSerializer(run).data,
                         status=status.HTTP_201_CREATED)
 

@@ -20,6 +20,7 @@
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
+from .api.imported import ImportedTeacherViewSet
 from .api.pe import PEDirectionViewSet, PEEnrollmentViewSet, PESlotViewSet
 from .api.views import (
     BuildingViewSet,
@@ -53,6 +54,7 @@ from .api.views import (
 )
 
 router = DefaultRouter()
+router.register("imported/teachers", ImportedTeacherViewSet, basename="imported-teacher")
 
 # --- Справочники (CRUD) -----------------------------------------------------
 router.register("semesters", SemesterViewSet, basename="semester")

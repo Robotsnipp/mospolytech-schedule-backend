@@ -91,11 +91,15 @@ class GenerateRequestSerializer(serializers.Serializer):
 class ScheduleFilterSerializer(serializers.Serializer):
     """Query-параметры просмотра пар расписания (group / stream / teacher)."""
 
-    semester = serializers.PrimaryKeyRelatedField(queryset=Semester.objects.all())
+    semester = serializers.PrimaryKeyRelatedField(queryset=Semester.objects.all(), required=False)
     module = serializers.PrimaryKeyRelatedField(
         queryset=Module.objects.all(), required=False, allow_null=True)
     run = serializers.IntegerField(
-        required=False, help_text="ID конкретного запуска; по умолчанию — последний завершённый.")
+        required=False, min_value=1,
+        help_text="Совместимое имя параметра run_id.")
+    run_id = serializers.IntegerField(
+        required=False, min_value=1,
+        help_text="ID конкретного запуска; позволяет не указывать период.")
 
 
 class PatternScheduleFilterSerializer(ScheduleFilterSerializer):
@@ -104,6 +108,14 @@ class PatternScheduleFilterSerializer(ScheduleFilterSerializer):
     week_pattern = serializers.PrimaryKeyRelatedField(
         queryset=WeekPattern.objects.all(), required=False, allow_null=True)
 
+    def validate(self, attrs):
+        run_id, legacy_run = attrs.get("run_id"), attrs.get("run")
+        if run_id is not None and legacy_run is not None and run_id != legacy_run:
+            raise serializers.ValidationError({"run_id": "run и run_id должны совпадать."})
+        attrs["run_id"] = run_id if run_id is not None else legacy_run
+        if attrs["run_id"] is None and "semester" not in attrs:
+            raise serializers.ValidationError({"semester": "Укажите semester или run_id."})
+        return attrs
 
 # ---------------------------------------------------------------------------
 # Перепланирование, совместные окна, свободные аудитории
@@ -148,6 +160,8 @@ MAX_COMMON_FREE_STUDENTS = 20
 class CommonFreeSlotsFilterSerializer(PatternScheduleFilterSerializer):
     """Query-параметры поиска общих окон студентов."""
 
+    semester = serializers.PrimaryKeyRelatedField(queryset=Semester.objects.all())
+
     students = serializers.CharField(
         help_text="ID студентов через запятую, например 1,5,9 (не больше 20).")
 
@@ -176,6 +190,7 @@ class FreeRoomsFilterSerializer(PatternScheduleFilterSerializer):
     если не задано ничего, берётся текущее время университета.
     """
 
+    semester = serializers.PrimaryKeyRelatedField(queryset=Semester.objects.all())
     day_of_week = serializers.IntegerField(required=False, min_value=0, max_value=5)
     lesson_number = serializers.IntegerField(required=False, min_value=1)
     at = serializers.DateTimeField(
@@ -185,6 +200,7 @@ class FreeRoomsFilterSerializer(PatternScheduleFilterSerializer):
     location = serializers.IntegerField(required=False, help_text="ID локации.")
 
     def validate(self, attrs):
+        attrs = super().validate(attrs)
         has_day, has_lesson = "day_of_week" in attrs, "lesson_number" in attrs
         if has_day != has_lesson:
             raise serializers.ValidationError(

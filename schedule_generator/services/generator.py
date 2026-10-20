@@ -8,14 +8,16 @@
 - Практики/лабораторки (очные, на одну группу): жёсткие ограничения —
   группа не может быть в двух местах одновременно, аудитория одна на слот,
   вместимость >= размер группы.
-- Лекции (онлайн, на поток групп): лекция одного потока идёт строго в один
-  слот недели (все группы потока слушают её одновременно); группы-слушатели
+- Лекции (онлайн, на поток групп): группы потока слушают каждую пару
+  одновременно; число пар определяется нагрузкой; группы-слушатели
   не могут пересекаться с другими занятиями в этом слоте; аудитория не нужна.
 - Физкультура (PE): полностью исключается из модели — студент приходит
   когда и куда хочет (см. services/event_specs.py).
 - ПД (очно, «группа» = студенты, выбравшие проект): блокируются конкретные
   студенты проекта (а не целиком учебные группы), чтобы студенты других
-  учебных групп могли учиться в тот же слот; всегда очная — требует аудиторию.
+  учебных групп могли учиться в тот же слот. Фиксированная ПД передаётся
+  отдельными интервалами: люди, известная комната и запас на дорогу блокируются
+  жёстко. Дополнительная площадка не требует аудитории Политеха.
 - Внеучебка: может быть очной или онлайн (поле format на событии);
   очная занимает аудиторию, онлайн — нет. Тоже участвует в генерации.
 - Дни ПД: проектная деятельность занимает понедельники и среды; в эти дни
@@ -29,6 +31,9 @@
   (config.TRAVEL_BUFFER_SLOTS).
 
 Soft-ограничения (штрафы в целевой функции, см. objectives.py):
+- не более max_pairs_per_day генерируемых пар преподавателя в день;
+- ожидание студентов и преподавателей между их занятиями, включая ПД,
+  сверх обычного перерыва. Полнота размещения приоритетнее мягких штрафов.
 - не более max_pairs_per_day у преподавателя в день;
 - «окна» у групп (пропуск между занятыми слотами в течение дня);
 - индекс усталости групп: превышение комфортного уровня и самый тяжёлый день;
@@ -66,7 +71,7 @@ from .constraints import (
     add_attendee_exclusivity,
     add_day_restrictions,
     add_event_pair_vars,
-    add_lecture_single_slot,
+    add_fixed_pd_constraints,
     add_location_consistency,
     add_room_exclusivity,
     add_teacher_exclusivity,
@@ -91,6 +96,7 @@ def generate_schedule(
     specs: list[EventSpec],
     teachers_by_id: dict[int, dict],
     config: SolverConfig | None = None,
+    fixed_pd=(),
     preferences: PlanningPreferences | None = None,
     pinned: list[dict] | None = None,
     forbidden: set[tuple[int, int]] | None = None,
@@ -112,7 +118,7 @@ def generate_schedule(
 
     model, model_context = _build_model(
         slots=slots, rooms=rooms, specs=specs, teachers_by_id=teachers_by_id,
-        preferences=preferences or PlanningPreferences(),
+        fixed_pd=fixed_pd, preferences=preferences or PlanningPreferences(),
         pinned=pinned or [], forbidden=forbidden or set())
     if model_context is None:  # пустой шаблон недели — решать нечего
         return GenerationResult("INFEASIBLE", None, time.time() - start_time, [],
@@ -139,7 +145,7 @@ def generate_schedule(
 
 
 def _build_model(*, slots, rooms, specs: list[EventSpec],
-                 teachers_by_id: dict[int, dict],
+                 teachers_by_id: dict[int, dict], fixed_pd=(),
                  preferences: PlanningPreferences,
                  pinned: list[dict], forbidden: set[tuple[int, int]]):
     """Собирает CpModel по частям (hard -> soft -> objective).
@@ -173,10 +179,12 @@ def _build_model(*, slots, rooms, specs: list[EventSpec],
         _build_variables(model, specs, slot_ids, room_ids, capacity_by_room_id)
 
     # ---- жёсткие ограничения (services/constraints.py) ----
-    add_lecture_single_slot(model, specs, slot_ids, pair_placement_vars)
     add_room_exclusivity(model, onsite_room_choice_vars)
     add_attendee_exclusivity(model, specs, slot_ids, pair_placement_vars)
     add_teacher_exclusivity(model, specs, slot_ids, pair_placement_vars)
+    add_fixed_pd_constraints(model, specs, fixed_pd, slot_list,
+                             pair_placement_vars, onsite_room_choice_vars)
+
     add_day_restrictions(model, specs, day_of_week_by_slot_id, pair_placement_vars)
     add_location_consistency(model, specs, slot_ids, pair_placement_vars,
                              onsite_room_choice_vars, location_id_by_room_id,
@@ -192,7 +200,8 @@ def _build_model(*, slots, rooms, specs: list[EventSpec],
     teacher_overload_vars = collect_teacher_overload_penalties(
         model, specs, day_of_week_by_slot_id, pair_placement_vars, teachers_by_id)
     window_vars = collect_window_penalties(
-        model, specs, slot_ids, day_of_week_by_slot_id, pair_placement_vars)
+        model, specs, slot_ids, day_of_week_by_slot_id, pair_placement_vars,
+        slots=slot_list, fixed_pd=fixed_pd)
     fatigue_excess_vars, fatigue_peak_vars = collect_fatigue_penalties(
         model, specs, slot_ids, day_of_week_by_slot_id, lesson_number_by_slot_id,
         pair_placement_vars)

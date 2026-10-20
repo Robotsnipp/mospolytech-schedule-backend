@@ -18,13 +18,10 @@ class SolverConfig:
     num_search_workers: int = 8
 
 
-# --- Веса целевой функции (масштаб: одна поставленная пара = REWARD_PLACED) ---
-REWARD_PLACED = 100                 # базовая награда за поставленную пару
-LECTURE_REWARD = int(REWARD_PLACED * 1.5)  # лекции важнее: их слушает много групп
-PENALTY_WINDOW = 3                  # штраф за «окно» у группы/студента в день
-PENALTY_TEACHER_OVERLOAD = 5        # штраф за превышение max_pairs_per_day
-
-
+# Полнота размещения всегда важнее мягких штрафов; масштаб задаёт objective.
+WINDOW_FREE_MINUTES = 30           # обычный перерыв не считается окном
+PENALTY_WINDOW = 1                 # за минуту ожидания сверх перерыва на человека
+PENALTY_TEACHER_OVERLOAD = 60       # за пару сверх дневного лимита преподавателя
 # --- Забота о людях (подробно — docs/SCHEDULING_RULES.md) ---
 # Индекс усталости дня: см. services/wellbeing.py
 FATIGUE_PAIR_WEIGHT = 10            # вклад каждой пары в усталость дня

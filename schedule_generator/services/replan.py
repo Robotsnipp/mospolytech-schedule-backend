@@ -14,11 +14,22 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from django.core.exceptions import ValidationError
 from django.db.models import Q
 
-from ..models import GenerationRun, Room, ScheduledClass, Student, TimeSlot
+from ..enums import LessonType
+from ..models import (
+    FixedProjectSession,
+    GenerationRun,
+    Room,
+    ScheduledClass,
+    Student,
+    TimeSlot,
+)
 from .config import SolverConfig
+from .curriculum import validate_prepared_load
 from .event_specs import build_event_specs
+from .fixed_pd import load_fixed_pd
 from .generation import load_teacher_limits, select_events
 from .generator import generate_schedule
 from .result_writer import persist_result
@@ -74,6 +85,18 @@ def replan_after_disruption(*, run, teacher=None, unavailable_days=None, room=No
         available_rooms = available_rooms.exclude(id=room.id)
     rooms = list(available_rooms.select_related("building", "building__location"))
     events = select_events(run.semester, run.module)
+    try:
+        validate_prepared_load(events)
+        fixed_pd, snapshot = load_fixed_pd(semester=run.semester, module=run.module,
+                                          week_pattern=week_pattern, slots=slots)
+    except (ValidationError, ValueError) as exc:
+        raise ReplanError(str(exc)) from exc
+    if any((teacher is not None and session.teacher_id == teacher.pk
+            and session.day_of_week in unavailable_days)
+           or (room is not None and session.room_id == room.pk) for session in fixed_pd):
+        raise ReplanError("Сбой затрагивает фиксированную ПД: сначала исправьте её источник.")
+    fixed_projects = FixedProjectSession.objects.filter(project__semester=run.semester).values("project_id")
+    events = events.exclude(lesson_type=LessonType.PD, project_id__in=fixed_projects)
     specs, skipped = build_event_specs(events)
 
     pinned = [{"event_id": scheduled.event_id, "slot_id": scheduled.slot_id,
@@ -83,12 +106,13 @@ def replan_after_disruption(*, run, teacher=None, unavailable_days=None, room=No
 
     note = f"Перепланирование запуска #{run.pk}: {_describe(teacher, unavailable_days, room)}."
     new_run = GenerationRun.objects.create(
-        semester=run.semester, module=run.module, status="PENDING", message=note)
+        semester=run.semester, module=run.module, status="PENDING", message=note,
+        fixed_pd_snapshot=snapshot)
     try:
         result = generate_schedule(
             slots=slots, rooms=rooms, specs=specs, teachers_by_id=load_teacher_limits(),
             config=SolverConfig(time_limit_seconds=time_limit_seconds, seed=seed),
-            pinned=pinned, forbidden=forbidden)
+            pinned=pinned, forbidden=forbidden, fixed_pd=fixed_pd)
         persist_result(run=new_run, generation_result=result, slots=slots, rooms=rooms,
                        events=events, skipped=skipped, clear_previous=False)
         # persist_result записывает сообщение решателя; пометка о причине запуска не должна теряться
