@@ -142,15 +142,10 @@ push: серверная защита настраивается на GitHub.
 
 ## Прототипы парсеров
 
-Локальное OCR сканированного очного плана, выгрузка JSON/CSV и страница
-визуальной сверки: [prototypes/curriculum_parser](prototypes/curriculum_parser/README.md).
+Локальное OCR сканированного очного плана и выгрузка JSON/CSV: [prototypes/curriculum_parser](prototypes/curriculum_parser/README.md).
 
-Разбор расписания ПД и физкультуры с JSON/CSV и страницей сверки:
+Разбор расписания ПД и физкультуры с выгрузкой JSON/CSV:
 [prototypes/activity_parser](prototypes/activity_parser/README.md).
-
-Сквозное офлайн-демо: фиксированная ПД, генерация общего расписания и
-персональные варианты для четырёх синтетических студентов:
-[prototypes/pd_schedule_demo](prototypes/pd_schedule_demo/README.md).
 
 Парсеры сами не пишут в БД. Проверенная ПД подключается отдельной командой выше;
 импорт учебного плана и физкультуры в генератор пока не реализован.

@@ -20,7 +20,6 @@ if __package__ in (None, ""):
 from prototypes.activity_parser.common import digest, write_csv, write_json
 from prototypes.activity_parser.pd import parse_pd
 from prototypes.activity_parser.pe import parse_pe
-from prototypes.activity_parser.review import write_review
 
 
 def sheet_url(url: str) -> str:
@@ -80,7 +79,8 @@ def main():
         print(f"ПД: проектов {len(pd['projects'])}, интервалов {sum(len(s['meetings']) for p in pd['projects'] for s in p['schedules'])}, "
               f"с предупреждениями {sum(bool(p['warnings']) for p in pd['projects'])}, исключено строк {len(pd['excluded_rows'])}")
     if args.pe_pdf:
-        pe = parse_pe(args.pe_pdf, args.output / "pe")
+        pe = parse_pe(args.pe_pdf)
+        (args.output / "pe").mkdir(parents=True, exist_ok=True)
         pe["source"] = {"filename": args.pe_pdf.name, "sha256": digest(args.pe_pdf.read_bytes()),
                         "captured_at": timestamp, "snapshot": "pe/source.pdf"}
         destination = args.output / "pe" / "source.pdf"
@@ -92,8 +92,7 @@ def main():
         print(f"Физра: страниц {len(pe['pages'])}, предложений {len(pe['sessions'])}, "
               f"мест без активности {len(pe['orphan_place_cells'])}, "
               f"с предупреждениями {sum(bool(s['warnings']) for s in pe['sessions'])}")
-    write_review(args.output, pd, pe)
-    print(args.output / "review.html")
+    print(args.output)
 
 
 if __name__ == "__main__":

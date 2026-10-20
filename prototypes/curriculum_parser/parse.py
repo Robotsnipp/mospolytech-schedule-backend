@@ -10,7 +10,6 @@ No database writes. The layout profile is specific to the supplied full-time pla
 import argparse
 import csv
 import hashlib
-import html
 import json
 import re
 import subprocess
@@ -390,31 +389,6 @@ def exports(output, rows, ocr, source):
                     "; ".join(entry["warnings"]),
                 ]
             )
-    cards = []
-    for entry in entries:
-        warnings = (
-            "<br>".join(html.escape(w) for w in entry["warnings"])
-            or "Автоматические сверки пройдены; проверить визуально"
-        )
-        cells = "".join(
-            f"<tr><th>{field}</th><td>{html.escape(value)}</td></tr>"
-            for field, value in entry["raw_cells"].items()
-        )
-        cards.append(
-            f'<section><h2>{html.escape(entry["subject"])}</h2><p>{warnings}</p>'
-            f'<img src="row-{entry["source_row"]:03}.png" alt="Исходная строка">'
-            f"<details><summary>Ячейки OCR</summary><table>{cells}</table></details></section>"
-        )
-    (output / "review.html").write_text(
-        '<!doctype html><html lang="ru"><meta charset="utf-8">'
-        "<title>Проверка OCR учебного плана</title><style>body{font:16px system-ui;max-width:1400px;margin:32px auto;padding:16px}"
-        "section{border-top:1px solid #ccc;padding:16px 0}img{width:100%}th,td{text-align:left;padding:4px 12px}p{color:#704000}</style>"
-        f"<h1>Прототип: {len(entries)} строк для проверки</h1><p>Не импортировать без сверки. "
-        "Ни одна строка автоматически не считается проверенной.</p>"
-        + "".join(cards)
-        + "</html>",
-        encoding="utf-8",
-    )
     return result
 
 
@@ -466,7 +440,8 @@ def main():
                 "rows_with_warnings": sum(
                     bool(e["warnings"]) for e in result["entries"]
                 ),
-                "review": str(output / "review.html"),
+                "json": str(output / "curriculum.json"),
+                "csv": str(output / "curriculum.csv"),
             },
             ensure_ascii=False,
         )

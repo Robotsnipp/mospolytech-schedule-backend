@@ -331,6 +331,25 @@ class FixedPDTests(TestCase):
         slot = ScheduledClass.objects.get(run_id=response.json()["id"]).slot
         self.assertIn(slot.lesson_number, (3, 4))
 
+    def test_import_then_api_generation_returns_classes_and_fixed_pd_in_one_run(self):
+        self.import_document()
+        self.lesson()
+        response = self.client.post("/api/schedule/generate/", data={
+            "semester": self.semester.pk, "module": self.module.pk,
+            "time_limit_seconds": 2, "clear_previous": False}, content_type="application/json")
+        self.assertEqual(response.status_code, 201)
+        result = response.json()
+        self.assertEqual(result["status"], "SOLVED")
+        self.assertEqual(len(result["scheduled_classes"]), 1)
+        self.assertEqual(len(result["fixed_pd_snapshot"]), 1)
+        fixed = result["fixed_pd_snapshot"][0]
+        self.assertEqual(fixed["student_ids"], [self.student.pk])
+        self.assertEqual(fixed["source"]["sha256"], self.document()["source"]["sha256"])
+        # ПД заканчивается в 16:00, запас 20 минут исключает слот 16:10.
+        slot = ScheduledClass.objects.get(run_id=result["id"]).slot
+        self.assertEqual(slot.lesson_number, 4)
+        self.assertFalse(GenerationRun.objects.get(pk=result["id"]).issues.exists())
+
     def test_pattern_parity_filters_dated_pd_from_first_semester_monday(self):
         self.only_slots(2)
         self.fixed(date=date(2026, 9, 14))  # третья неделя от понедельника 31 августа
