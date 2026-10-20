@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import date
 
 
 @dataclass
@@ -35,6 +36,25 @@ class EventSpec:
     stream_id: int | None = None
     # Разрешённые дни недели размещения (пусто — без ограничений по дням).
     allowed_days: frozenset[int] = frozenset()
+    # Группы отдельных участников ПД: конфликтуют с общей парой группы,
+    # но не запрещают два разных проекта с непересекающимися студентами.
+    participant_group_ids: set[int] = field(default_factory=set)
+
+
+@dataclass(frozen=True)
+class FixedPDSpec:
+    session_id: int
+    project_id: int
+    day_of_week: int
+    start_minute: int
+    end_minute: int
+    teacher_id: int
+    student_ids: frozenset[int]
+    participant_group_ids: frozenset[int]
+    room_id: int | None
+    place_raw: str
+    travel_buffer_minutes: int
+    occurrence_dates: frozenset[date]
 
 
 @dataclass
@@ -57,3 +77,4 @@ class RunOutcome:
     status: str
     scheduled_count: int
     issue_count: int
+    fixed_pd_count: int = 0

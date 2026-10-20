@@ -1,0 +1,79 @@
+{
+  "source_sha256": "73c9b91711fa43b1154b02e86587a3de6c43f83e2cd2f6525852f01c18005caf",
+  "description": "Manually checked against the supplied PDF; regression evidence, not correction rules.",
+  "checks": [
+    {
+      "source_row": 5,
+      "path": "controls.credit_semesters",
+      "expected": [
+        1
+      ]
+    },
+    {
+      "source_row": 8,
+      "path": "controls.exam_semesters",
+      "expected": [
+        1
+      ]
+    },
+    {
+      "source_row": 14,
+      "path": "totals.contact_hours",
+      "expected": 36
+    },
+    {
+      "source_row": 15,
+      "path": "totals.contact_hours",
+      "expected": 36
+    },
+    {
+      "source_row": 23,
+      "path": "totals.independent_hours",
+      "expected": 36
+    },
+    {
+      "source_row": 31,
+      "path": "controls.credit_semesters",
+      "expected": [
+        1
+      ]
+    },
+    {
+      "source_row": 32,
+      "path": "semester_loads.3.contact_hours",
+      "expected": 36
+    },
+    {
+      "source_row": 39,
+      "path": "controls.credit_semesters",
+      "expected": [
+        1
+      ]
+    },
+    {
+      "source_row": 42,
+      "path": "totals.independent_hours",
+      "expected": 60
+    },
+    {
+      "source_row": 46,
+      "path": "totals.independent_hours",
+      "expected": 90
+    },
+    {
+      "source_row": 60,
+      "path": "totals.credit_units",
+      "expected": 6
+    },
+    {
+      "source_row": 70,
+      "path": "discipline_code",
+      "expected": "Б1.2.ЭД.1.1"
+    },
+    {
+      "source_row": 75,
+      "path": "discipline_code",
+      "expected": "Б1.2.ЭД.2.3"
+    }
+  ]
+}

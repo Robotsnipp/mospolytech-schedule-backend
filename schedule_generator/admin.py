@@ -14,6 +14,7 @@ from .models import (
     Building,
     Curriculum,
     CurriculumEntry,
+    FixedProjectSession,
     GenerationIssue,
     GenerationRun,
     Group,
@@ -93,6 +94,13 @@ class ProjectEnrollmentAdmin(admin.ModelAdmin):
     autocomplete_fields = ("student", "project")
 
 
+@admin.register(FixedProjectSession)
+class FixedProjectSessionAdmin(admin.ModelAdmin):
+    list_display = ("project", "module", "date", "day_of_week", "start_time", "end_time", "teacher", "room")
+    list_filter = ("project__semester", "module", "day_of_week")
+    autocomplete_fields = ("project", "teacher", "room")
+
+
 # ---------------- Ресурсы ----------------
 
 @admin.register(Subject)
@@ -102,6 +110,7 @@ class SubjectAdmin(admin.ModelAdmin):
 
 @admin.register(Room)
 class RoomAdmin(admin.ModelAdmin):
+    search_fields = ("name",)
     list_display = ("name", "location_name", "building", "capacity", "room_type", "is_active")
     list_filter = ("building__location", "building", "is_active")
 
@@ -151,7 +160,7 @@ class ScheduledClassAdmin(admin.ModelAdmin):
 class GenerationRunAdmin(admin.ModelAdmin):
     list_display = ("id", "semester", "created_at", "status",
                     "objective_value", "solve_time_seconds")
-    readonly_fields = ("created_at",)
+    readonly_fields = ("created_at", "fixed_pd_snapshot")
 
 
 @admin.register(GenerationIssue)

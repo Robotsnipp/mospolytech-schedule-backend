@@ -18,7 +18,7 @@ from collections import defaultdict
 from ortools.sat.python import cp_model
 
 from ..enums import Format
-from .dto import EventSpec
+from .dto import EventSpec, FixedPDSpec
 
 
 def add_lecture_single_slot(model: cp_model.CpModel, specs: list[EventSpec],
@@ -60,6 +60,12 @@ def add_attendee_exclusivity(model: cp_model.CpModel, specs: list[EventSpec],
     for attendee_vars in vars_by_slot_attendee.values():
         if len(attendee_vars) > 1:
             model.AddAtMostOne(attendee_vars)
+    for spec in specs:
+        for group_id in spec.participant_group_ids:
+            for slot_id in slot_ids:
+                group_vars = vars_by_slot_attendee.get(("group", group_id, slot_id), [])
+                if group_vars:
+                    model.Add(sum(group_vars) + pair_placement_vars[(spec.event_id, slot_id)] <= 1)
 
 
 def add_teacher_exclusivity(model: cp_model.CpModel, specs: list[EventSpec],
@@ -78,6 +84,48 @@ def add_teacher_exclusivity(model: cp_model.CpModel, specs: list[EventSpec],
             if len(teacher_slot_vars) > 1:
                 model.AddAtMostOne(teacher_slot_vars)
 
+
+def add_fixed_pd_constraints(model, specs: list[EventSpec], fixed_pd: list[FixedPDSpec],
+                             slots, pair_placement_vars, onsite_room_choice_vars):
+    """Неподвижные интервалы ПД блокируют людей, известную комнату и дорогу.
+
+    Для недельного шаблона используется объединение дат в периоде: занятие
+    на одну дату тоже запрещает пересечение в соответствующем дне шаблона.
+    """
+    choices_by_event_slot = {}
+    for (event_id, slot_id, room_id), var in onsite_room_choice_vars.items():
+        choices_by_event_slot.setdefault((event_id, slot_id), []).append((room_id, var))
+    for fixed in fixed_pd:
+        fixed_start = fixed.day_of_week * 1440 + fixed.start_minute
+        fixed_end = fixed.day_of_week * 1440 + fixed.end_minute
+        for slot in slots:
+            start = slot.day_of_week * 1440 + slot.start_time.hour * 60 + slot.start_time.minute
+            end = slot.day_of_week * 1440 + slot.end_time.hour * 60 + slot.end_time.minute
+            overlap = start < fixed_end and fixed_start < end
+            buffer = fixed.travel_buffer_minutes
+            travel_overlap = any(start < fixed_end + shift + buffer and fixed_start + shift - buffer < end
+                                 for shift in (-7 * 1440, 0, 7 * 1440))
+            if not overlap and not travel_overlap:
+                continue
+            for spec in specs:
+                shared_people = (spec.teacher_id == fixed.teacher_id
+                                 or bool(spec.blocking_student_ids & fixed.student_ids)
+                                 or bool(spec.blocking_group_ids & fixed.participant_group_ids))
+                if overlap and shared_people:
+                    model.Add(pair_placement_vars[(spec.event_id, slot.id)] == 0)
+                elif travel_overlap and shared_people and spec.format == Format.ONSITE:
+                    # В той же известной комнате переход не требуется.
+                    # Для внешнего адреса комната неизвестна: блокируем весь слот.
+                    if fixed.room_id is None:
+                        model.Add(pair_placement_vars[(spec.event_id, slot.id)] == 0)
+                    else:
+                        for room_id, var in choices_by_event_slot.get((spec.event_id, slot.id), []):
+                            if room_id != fixed.room_id:
+                                model.Add(var == 0)
+                if overlap and fixed.room_id is not None:
+                    choice = onsite_room_choice_vars.get((spec.event_id, slot.id, fixed.room_id))
+                    if choice is not None:
+                        model.Add(choice == 0)
 
 def add_day_restrictions(model: cp_model.CpModel, specs: list[EventSpec],
                          day_of_week_by_slot_id: dict[int, int],

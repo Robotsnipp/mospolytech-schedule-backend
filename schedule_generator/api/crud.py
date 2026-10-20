@@ -570,4 +570,4 @@ class GenerationRunSerializer(serializers.ModelSerializer):
         model = GenerationRun
         fields = ["id", "semester", "module", "created_at", "status",
                   "status_display", "objective_value", "solve_time_seconds",
-                  "message", "scheduled_classes", "issues"]
+                  "message", "scheduled_classes", "fixed_pd_snapshot", "issues"]
