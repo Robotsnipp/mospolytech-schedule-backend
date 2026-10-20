@@ -52,6 +52,7 @@ INSTALLED_APPS = [
     'drf_spectacular',
     'django_extensions',
     'schedule_generator',
+    'rasp',
 ]
 
 # Dev-панель проверки подключается ТОЛЬКО в режиме разработки (DEBUG=True).
@@ -62,6 +63,7 @@ if DEBUG:
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -97,7 +99,7 @@ ASGI_APPLICATION = 'config.asgi.application'
 _db_engine = env('DB_ENGINE', default='django.db.backends.postgresql')
 if _db_engine.startswith('sqlite'):
     DATABASES = {'default': {'ENGINE': 'django.db.backends.sqlite3',
-                             'NAME': BASE_DIR / 'db.sqlite3'}}
+                             'NAME': env('SQLITE_PATH', default=str(BASE_DIR / 'db.sqlite3'))}}
 else:
     DATABASES = {
         'default': {
@@ -147,6 +149,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = 'static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': (
@@ -177,3 +180,7 @@ SPECTACULAR_SETTINGS = {
         {'BearerAuth': []},
     ],
 }
+
+# Расписание rasp.dmami.ru: список групп и кэш сырых ответов.
+RASP_GROUPS_FILE = Path(env('RASP_GROUPS_FILE', default=str(BASE_DIR / 'data' / 'groups.json')))
+RASP_RAW_DIR = Path(env('RASP_RAW_DIR', default=str(BASE_DIR / 'data' / 'raw')))

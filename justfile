@@ -9,5 +9,5 @@ migrate:
 resetdb:
     uv run python manage.py reset_db
 
-generate:
-    uv run python manage.py generate_demo_schedule --time-limit 60
+import-schedule:
+    uv run python manage.py import_rasp

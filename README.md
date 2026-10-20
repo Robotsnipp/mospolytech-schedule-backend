@@ -208,7 +208,7 @@ ID условные. Последний маршрут возвращает св
 ```sh
 SECRET_KEY=local-test-only DB_ENGINE=sqlite python manage.py migrate
 SECRET_KEY=local-test-only DB_ENGINE=sqlite python manage.py test schedule_generator
-SECRET_KEY=local-test-only DB_ENGINE=sqlite python manage.py generate_demo_schedule --time-limit 60
+SECRET_KEY=local-test-only DB_ENGINE=sqlite python manage.py import_rasp --groups 231-333
 ```
 
 Тесты проверяют импорт плана и подготовку часов, реальный решатель, фильтрацию
@@ -340,3 +340,22 @@ JSON/CSV-файлы, с сохранением исходников и офла�
 
 Парсеры сами не пишут в БД. Проверенные учебный план и ПД подключаются отдельными
 командами выше. Импорт предложений физкультуры в приложение пока не реализован.
+
+## Реальное расписание rasp.dmami.ru (приложение `rasp`)
+
+Демо-генерация данных удалена: API `/api/rasp/` отдаёт только то, что импортировано в БД.
+
+```sh
+python manage.py import_rasp                     # все группы из data/groups.json, обе сессии
+python manage.py import_rasp --groups 231-333,24А-111 --session 0 --refresh --concurrency 3
+```
+
+Флаги: `--groups` (подмножество), `--session 0|1|all` (по умолчанию `all`), `--refresh`
+(игнорировать кэш), `--concurrency` (по умолчанию 3, максимум 3). Сырые ответы кэшируются в
+`data/raw/{session}/{группа}.json` (`RASP_RAW_DIR`), повторный запуск без `--refresh` идёт из кэша.
+Список групп — `data/groups.json` (`RASP_GROUPS_FILE`). Импорт идемпотентен: занятия группы
+заменяются транзакцией. Пустая сессия (`Не нашлось расписание для группы`) — не ошибка.
+
+Эндпоинты: `GET /api/rasp/groups/`, `groups/<номер>/lessons/?session=0|1`, `teachers/`,
+`teachers/<id>/lessons/`, `rooms/free/?weekday=&pair=&date=`, `pair-times/`.
+Время пар хранится в одном месте — `rasp/pair_times.py`.

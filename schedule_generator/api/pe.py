@@ -30,11 +30,12 @@ class PEEnrollmentSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = PEEnrollment
-        fields = ["id", "student", "slot", "slot_detail"]
+        fields = ["id", "owner", "group_title", "slot", "slot_detail"]
+        extra_kwargs = {"owner": {"min_length": 8}}
 
     def validate(self, attrs):
         try:
-            check_can_enroll(attrs["student"], attrs["slot"])
+            check_can_enroll(attrs["owner"], attrs.get("group_title", ""), attrs["slot"])
         except PEEnrollmentError as exc:
             raise serializers.ValidationError({"detail": str(exc)}) from exc
         return attrs
@@ -64,7 +65,7 @@ class PESlotViewSet(viewsets.ReadOnlyModelViewSet):
 
 
 @extend_schema_view(
-    list=extend_schema(summary="Записи студента на физкультуру (?student=<id>)",
+    list=extend_schema(summary="Записи на физкультуру (?owner=<client id>)",
                        tags=["Физкультура"]),
     create=extend_schema(summary="Записаться на слот физкультуры", tags=["Физкультура"]),
     destroy=extend_schema(summary="Отменить запись", tags=["Физкультура"]),
@@ -79,10 +80,17 @@ class PEEnrollmentViewSet(mixins.ListModelMixin, mixins.CreateModelMixin,
 
     def get_queryset(self):
         qs = super().get_queryset()
-        student = self.request.query_params.get("student")
-        if student and student.isdigit():
-            qs = qs.filter(student_id=int(student))
+        owner = self.request.query_params.get("owner")
+        if self.action == "list":
+            qs = qs.filter(owner=owner) if owner else qs.none()
         return qs
+
+    def destroy(self, request, *args, **kwargs):
+        obj = self.get_object()
+        if obj.owner != request.query_params.get("owner"):
+            return Response({"detail": "Чужая запись."}, status=status.HTTP_403_FORBIDDEN)
+        obj.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)

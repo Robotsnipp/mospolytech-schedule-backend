@@ -33,6 +33,7 @@ urlpatterns = [
     path('health/', health),
     path('admin/', admin.site.urls),
     path('api/schedule/', include('schedule_generator.urls')),
+    path('api/rasp/', include('rasp.urls')),
     path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
     path('api/docs/', SpectacularSwaggerView.as_view(url_name='schema'),
          name='swagger-ui'),

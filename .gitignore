@@ -175,3 +175,5 @@ cython_debug/
 
 # Local OCR prototype artifacts
 /output/parser-prototype/
+staticfiles/
+data/raw/

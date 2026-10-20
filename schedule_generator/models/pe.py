@@ -42,8 +42,10 @@ class PESlot(models.Model):
 
 
 class PEEnrollment(models.Model):
-    student = models.ForeignKey("schedule_generator.Student", on_delete=models.CASCADE,
-                                related_name="pe_enrollments", verbose_name="Студент")
+    """Запись на слот. Владелец — идентификатор браузера (входа в системе нет)."""
+
+    owner = models.CharField("Владелец (client id)", max_length=64, default="")
+    group_title = models.CharField("Группа", max_length=50, blank=True, default="")
     slot = models.ForeignKey(PESlot, on_delete=models.CASCADE,
                              related_name="enrollments", verbose_name="Слот")
 
@@ -51,8 +53,8 @@ class PEEnrollment(models.Model):
         verbose_name = "Запись на физкультуру"
         verbose_name_plural = "Записи на физкультуру"
         constraints = [
-            models.UniqueConstraint(fields=["student", "slot"], name="uniq_pe_enrollment"),
+            models.UniqueConstraint(fields=["owner", "slot"], name="uniq_pe_enrollment_owner"),
         ]
 
     def __str__(self):
-        return f"{self.student_id} -> {self.slot_id}"
+        return f"{self.owner} -> {self.slot_id}"

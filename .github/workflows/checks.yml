@@ -46,4 +46,3 @@ jobs:
       - run: uv run --no-sync python manage.py makemigrations --check --dry-run
       - run: uv run --no-sync python manage.py migrate --noinput
       - run: uv run --no-sync python manage.py test schedule_generator
-      - run: uv run --no-sync python manage.py generate_demo_schedule --time-limit 3
