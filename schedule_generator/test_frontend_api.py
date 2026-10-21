@@ -62,3 +62,21 @@ class FrontendApiTests(TestCase):
         self.assertEqual(self.client.get("/api/schedule/pe/directions/").json()["count"], 1)
         slots = self.client.get("/api/schedule/pe/slots/", {"direction": 1}).json()
         self.assertEqual(slots["count"], 3)
+
+
+class LoadPeTests(TestCase):
+    def test_load_is_idempotent_and_replaces_old_slots(self):
+        from django.core.management import call_command
+
+        old = PEDirection.objects.create(code="yoga", name="Йога")
+        PESlot.objects.create(direction=old, day_of_week=0, start_time=time(9), end_time=time(10, 30))
+        call_command("load_pe", verbosity=0)
+        count = PESlot.objects.count()
+        self.assertGreater(count, 150)
+        self.assertFalse(PEDirection.objects.filter(code="yoga").exists())
+        call_command("load_pe", verbosity=0)
+        self.assertEqual(PESlot.objects.count(), count)
+        slot = PESlot.objects.filter(direction__code="basketball", day_of_week=0,
+                                     start_time=time(9)).get()
+        self.assertIn("Автозаводск", slot.place)
+        self.assertEqual(slot.end_time, time(10, 30))

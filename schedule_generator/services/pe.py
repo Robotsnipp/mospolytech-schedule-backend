@@ -15,13 +15,18 @@ class PEEnrollmentError(Exception):
 
 def check_can_enroll(owner: str, group_title: str, slot) -> None:
     """Не больше одного слота в день и без пересечения с парами группы."""
-    from rasp.models import Lesson
+    from rasp.models import Lesson, PDSlot
     from rasp.pair_times import PAIR_TIMES
 
     if PEEnrollment.objects.filter(owner=owner, slot=slot).exists():
         raise PEEnrollmentError("Вы уже записаны на этот слот.")
     if PEEnrollment.objects.filter(owner=owner, slot__day_of_week=slot.day_of_week).exists():
         raise PEEnrollmentError("В этот день уже выбрана физкультура: не более одной в день.")
+    for pd_slot in PDSlot.objects.filter(project__enrollments__owner=owner,
+                                         day_of_week=slot.day_of_week):
+        if slot.start_time < pd_slot.end_time and pd_slot.start_time < slot.end_time:
+            raise PEEnrollmentError(
+                f"Конфликт с проектной деятельностью ({pd_slot.start_time:%H:%M}–{pd_slot.end_time:%H:%M}).")
     if not group_title:
         return
 

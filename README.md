@@ -359,3 +359,27 @@ python manage.py import_rasp --groups 231-333,24А-111 --session 0 --refresh --c
 Эндпоинты: `GET /api/rasp/groups/`, `groups/<номер>/lessons/?session=0|1`, `teachers/`,
 `teachers/<id>/lessons/`, `rooms/free/?weekday=&pair=&date=`, `pair-times/`.
 Время пар хранится в одном месте — `rasp/pair_times.py`.
+
+## Физкультура (реальное расписание из PDF)
+Слоты физкультуры берутся из PDF «Расписание элективных дисциплин по физической культуре» (`data/pe/*.pdf`).
+Разбор PDF → `data/pe/pe_schedule.json` (нужен `pdfplumber`, в зависимости проекта не входит):
+
+```sh
+python -m venv /tmp/pe && /tmp/pe/bin/pip install pdfplumber
+/tmp/pe/bin/python scripts/parse_pe_pdf.py data/pe/<файл>.pdf data/pe/pe_schedule.json
+python manage.py load_pe      # идемпотентно: заменяет слоты, удаляет отсутствующие в файле
+```
+Запись на слот: `POST /api/schedule/pe/enrollments/` (`owner` — идентификатор браузера, `group_title`, `slot`).
+
+## Проектная деятельность
+Список проектов — опубликованная Google-таблица Центра проектной деятельности (CSV кэшируется в
+`data/pd/pd_schedule.csv`). Загрузка идемпотентна и заменяет набор проектов:
+
+```sh
+python manage.py import_pd              # из кэша (data/pd/pd_schedule.csv)
+python manage.py import_pd --refresh    # скачать таблицу заново
+```
+Парсер: `rasp/pd_parser.py`. Расписание проекта — по одному слоту на каждую пару в колонках «понедельник»/«среда»;
+переносы и разовые занятия из таблицы сохраняются текстом в `note`. Эндпоинты: `GET /api/rasp/pd/directions/`,
+`pd/projects/?direction=&q=`, `GET|POST pd/enrollments/` (`owner`, `group_title`, `project`; выбор заменяет прежний),
+`DELETE pd/enrollments/<id>/?owner=`. Конфликты проверяются с парами группы и физкультурой.

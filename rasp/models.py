@@ -86,3 +86,52 @@ class Lesson(models.Model):
 
     def __str__(self):
         return f"{self.group_id} {self.weekday}/{self.pair} {self.subject_id}"
+
+
+class PDProject(models.Model):
+    """Проект по проектной деятельности (таблица Центра проектной деятельности)."""
+
+    number = models.PositiveIntegerField(unique=True, help_text="№ в таблице")
+    direction = models.CharField(max_length=100)
+    title = models.CharField(max_length=300)
+    teacher = models.CharField(max_length=300, blank=True)
+    contact = models.CharField(max_length=300, blank=True)
+    note = models.TextField(blank=True, help_text="Переносы и разовые занятия из таблицы")
+    irregular = models.BooleanField(default=False)
+
+    class Meta:
+        db_table = "rasp_pd_projects"
+        ordering = ["direction", "number"]
+
+    def __str__(self):
+        return f"{self.number}. {self.title}"
+
+
+class PDSlot(models.Model):
+    project = models.ForeignKey(PDProject, on_delete=models.CASCADE, related_name="slots")
+    day_of_week = models.PositiveSmallIntegerField(help_text="0 = пн … 5 = сб")
+    start_time = models.TimeField()
+    end_time = models.TimeField()
+    room = models.CharField(max_length=300, blank=True)
+
+    class Meta:
+        db_table = "rasp_pd_slots"
+        ordering = ["day_of_week", "start_time"]
+
+    def __str__(self):
+        return f"{self.project_id} {self.day_of_week} {self.start_time:%H:%M}"
+
+
+class PDEnrollment(models.Model):
+    """Выбор проекта. Входа в системе нет: владелец — идентификатор браузера."""
+
+    owner = models.CharField(max_length=64, unique=True)
+    group_title = models.CharField(max_length=50, blank=True)
+    project = models.ForeignKey(PDProject, on_delete=models.CASCADE, related_name="enrollments")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "rasp_pd_enrollments"
+
+    def __str__(self):
+        return f"{self.owner} -> {self.project_id}"

@@ -46,3 +46,26 @@ class ImportAndApiTests(TestCase):
         self.assertEqual(free.status_code, 200)
         self.assertGreater(len(free.json()), 0)
         self.assertEqual(self.client.get("/api/rasp/pair-times/").json()[0]["start"], "09:00")
+
+    def test_rooms_status_shows_who_occupies_room(self):
+        from datetime import timedelta
+
+        lesson = (Lesson.objects.filter(rooms__url__isnull=True, date_from__isnull=False)
+                  .exclude(rooms__location__in=("ПД", "Webinar")).distinct().first())
+        room = lesson.rooms.filter(url__isnull=True).first()
+        day = lesson.date_from
+        while day.isoweekday() != lesson.weekday:
+            day += timedelta(days=1)
+        url = f"/api/rasp/rooms/status/?weekday={lesson.weekday}&pair={lesson.pair}&date={day}"
+        data = self.client.get(url).json()
+        row = next(r for r in data["rooms"] if r["id"] == room.id)
+        self.assertTrue(row["busy"])
+        self.assertIn("231-333", row["lessons"][0]["groups"])
+        self.assertTrue(row["lessons"][0]["subject"])
+        self.assertIn(room.location, data["locations"])
+        self.assertFalse(any("лайн" in r["name"].lower() for r in data["rooms"]))
+        # другое время: та же аудитория свободна
+        other = self.client.get(
+            f"/api/rasp/rooms/status/?weekday={lesson.weekday}&pair={lesson.pair}&date=2000-01-01").json()
+        self.assertFalse(next(r for r in other["rooms"] if r["id"] == room.id)["busy"])
+        self.assertEqual(self.client.get("/api/rasp/rooms/status/").status_code, 400)

@@ -27,14 +27,14 @@ class PESlot(models.Model):
     day_of_week = models.PositiveSmallIntegerField("День недели (0 — пн … 5 — сб)")
     start_time = models.TimeField("Начало")
     end_time = models.TimeField("Конец")
-    place = models.CharField("Место", max_length=100, blank=True)
+    place = models.CharField("Место", max_length=300, blank=True)
 
     class Meta:
         verbose_name = "Слот физкультуры"
         verbose_name_plural = "Слоты физкультуры"
         constraints = [
-            models.UniqueConstraint(fields=["direction", "day_of_week", "start_time"],
-                                    name="uniq_pe_slot"),
+            models.UniqueConstraint(fields=["direction", "day_of_week", "start_time", "place"],
+                                    name="uniq_pe_slot_place"),
         ]
 
     def __str__(self):
