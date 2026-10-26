@@ -22,4 +22,7 @@ class SolverConfig:
 REWARD_PLACED = 100                 # базовая награда за поставленную пару
 LECTURE_REWARD = int(REWARD_PLACED * 1.5)  # лекции важнее: их слушает много групп
 PENALTY_WINDOW = 3                  # штраф за «окно» у группы/студента в день
+PENALTY_LECTURE_ONSITE_GAP = 20     # штраф за соседство лекции и очного занятия
+                                    # без пропуска между ними (hard-запрет —
+                                    # см. constraints.add_lecture_onsite_gap)
 PENALTY_TEACHER_OVERLOAD = 5        # штраф за превышение max_pairs_per_day

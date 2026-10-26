@@ -25,6 +25,10 @@
   поэтому один участник (группа/студент/преподаватель) не может в одном
   слоте находиться на двух разных локациях (add_location_consistency);
   аудитории без корпуса в ограничении не участвуют.
+- Лекция + очное: если у участника в один день идут лекция (онлайн) и
+  очное занятие, между ними обязана быть хотя бы одна пустая пара —
+  занятия не могут стоять в соседних слотах (add_lecture_onsite_gap);
+  лишние пропуска сверх одного штрафуются, чтобы время простоя был минимальным.
 
 Soft-ограничения (штрафы в целевой функции, см. objectives.py):
 - не более max_pairs_per_day у преподавателя в день;
@@ -50,6 +54,7 @@ from .constraints import (
     add_attendee_exclusivity,
     add_day_restrictions,
     add_event_pair_vars,
+    add_lecture_onsite_gap,
     add_lecture_single_slot,
     add_location_consistency,
     add_room_exclusivity,
@@ -147,6 +152,7 @@ def _build_model(*, slots, rooms, specs: list[EventSpec],
     add_attendee_exclusivity(model, specs, slot_ids, pair_placement_vars)
     add_teacher_exclusivity(model, specs, slot_ids, pair_placement_vars)
     add_day_restrictions(model, specs, day_of_week_by_slot_id, pair_placement_vars)
+    add_lecture_onsite_gap(model, specs, day_of_week_by_slot_id, pair_placement_vars)
     add_location_consistency(model, specs, slot_ids, pair_placement_vars,
                              onsite_room_choice_vars, location_id_by_room_id)
     add_event_pair_vars(model, specs, slot_ids, pair_placement_vars)
