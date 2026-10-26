@@ -11,6 +11,7 @@ from schedule_generator.models import (
     CurriculumEntry,
     GenerationRun,
     Group,
+    LectureStream,
     LessonEvent,
     Module,
     Room,
@@ -176,3 +177,99 @@ class PlanningTests(TestCase):
         # инвариант решателя: в одном слоте аудитория занята не более чем одной парой
         self.assertFalse(first_class.slot_id == second_class.slot_id
                          and first_class.room_id == second_class.room_id)
+
+
+class LectureOnsiteGapTests(TestCase):
+    """Лекция и очное занятие одного участника в один день разделены пропуском."""
+
+    def setUp(self):
+        self.semester = Semester.objects.create(name='Test', start_date=date(2026, 9, 1))
+        self.pattern = WeekPattern.objects.create(semester=self.semester)
+        # три слота в один день (вт): лекция + очная практика подряд невозможны
+        self.slots = [
+            TimeSlot.objects.create(week_pattern=self.pattern, day_of_week=1,
+                                    lesson_number=number)
+            for number in (1, 2, 3)
+        ]
+        self.subject = Subject.objects.create(name='Math')
+        self.group = Group.objects.create(name='261-101')
+        Student.objects.create(group=self.group, full_name='Студент')
+        self.room = Room.objects.create(name='R', capacity=30)
+
+    def lecture_event(self):
+        stream = LectureStream.objects.create(semester=self.semester, subject=self.subject)
+        stream.groups.add(self.group)
+        return LessonEvent.objects.create(
+            semester=self.semester, subject=self.subject, stream=stream,
+            lesson_type=LessonType.LECTURE, pairs_per_week=1, audience_size=25,
+        )
+
+    def onsite_event(self):
+        return LessonEvent.objects.create(
+            semester=self.semester, subject=self.subject, group=self.group,
+            lesson_type=LessonType.PRACTICE, pairs_per_week=1,
+        )
+
+    def test_lecture_and_onsite_are_never_adjacent_same_day(self):
+        """Реальный решатель ставит лекцию и очную пару с пропуском между ними."""
+        lecture = self.lecture_event()
+        onsite = self.onsite_event()
+        result = run_generation(semester=self.semester, time_limit_seconds=5)
+        self.assertEqual(result.status, 'SOLVED')
+        classes = ScheduledClass.objects.filter(run_id=result.run_id)
+        lecture_slot = classes.get(event=lecture).slot
+        onsite_slot = classes.get(event=onsite).slot
+        self.assertEqual(lecture_slot.day_of_week, onsite_slot.day_of_week)
+        # между ними ровно один свободный слот этого дня (пропуск)
+        self.assertGreaterEqual(abs(lecture_slot.lesson_number - onsite_slot.lesson_number), 2)
+        middle = TimeSlot.objects.get(week_pattern=self.pattern, day_of_week=1,
+                                      lesson_number=2)
+        self.assertFalse(classes.filter(slot=middle).exists())
+
+    def test_infeasible_without_gap_slot_fails_as_partial(self):
+        """Два слота подряд без пропуска — решение невозможно; пары не теряются
+        молча: запуск остаётся PARTIAL с unscheduled-событием."""
+        self.slots[2].delete()  # остаются только слоты 1 и 2 в один день
+        lecture = self.lecture_event()
+        result = run_generation(semester=self.semester, time_limit_seconds=5)
+        self.assertEqual(result.status, 'PARTIAL')
+        classes = ScheduledClass.objects.filter(run_id=result.run_id)
+        # очная пара встала, лекции некуда стать с пропуском
+        self.assertTrue(classes.filter(event__lesson_type=LessonType.PRACTICE).exists())
+        self.assertFalse(classes.filter(event=lecture).exists())
+
+    def test_minimal_gaps_two_groups_share_stream(self):
+        """Минимизация пропусков: две группы потока + своя очная пара у каждой.
+
+        Дневная награда за пару превышает штраф за окно, поэтому решатель
+        обязан выбрать размещение с наименьшим числом пропусков: оба занятия
+        группы умещаются в один день через один пропуск (слоты 1 и 3), а
+        лишние окна не создаются.
+        """
+        second_group = Group.objects.create(name='261-102')
+        Student.objects.create(group=second_group, full_name='Студентка')
+        # третий слот (пара 2) нужен для «неправильного» размещения подряд
+        lecture = self.lecture_event()
+        first_onsite = self.onsite_event()
+        second_onsite = LessonEvent.objects.create(
+            semester=self.semester, subject=self.subject, group=second_group,
+            lesson_type=LessonType.PRACTICE, pairs_per_week=1,
+        )
+        result = run_generation(semester=self.semester, time_limit_seconds=5)
+        self.assertEqual(result.status, 'SOLVED')
+        classes = list(ScheduledClass.objects.filter(run_id=result.run_id))
+        by_slot = {c.slot_id: c for c in classes}
+        slot_ids = [slot.id for slot in self.slots]
+        # инвариант правила: в каждом дне лекция и очные разделены пропуском
+        lecture_slot = next(c.slot for c in classes if c.event_id == lecture.id)
+        for scheduled in classes:
+            if scheduled.event_id == lecture.id:
+                continue
+            self.assertNotEqual(
+                abs(scheduled.slot.lesson_number - lecture_slot.lesson_number), 1)
+        # минимум пропусков достигнут: все три пары заняли слоты 1 и 3
+        # (оба события группы — в одном дне), слот 2 пуст как пропуск
+        self.assertEqual(len(classes), 3)
+        used_numbers = sorted({by_slot[sid].slot.lesson_number for sid in by_slot})
+        self.assertEqual(used_numbers.count(2), 0)
+        self.assertTrue(all(n in (1, 3) for n in used_numbers))

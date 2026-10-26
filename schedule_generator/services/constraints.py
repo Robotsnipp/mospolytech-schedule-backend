@@ -17,7 +17,7 @@ from collections import defaultdict
 
 from ortools.sat.python import cp_model
 
-from ..enums import Format
+from ..enums import Format, LessonType
 from .dto import EventSpec
 
 
@@ -95,6 +95,149 @@ def add_day_restrictions(model: cp_model.CpModel, specs: list[EventSpec],
         for slot_id, day_of_week in day_of_week_by_slot_id.items():
             if day_of_week not in spec.allowed_days:
                 model.Add(pair_placement_vars[(spec.event_id, slot_id)] == 0)
+
+
+def _not_any(terms: list, model: cp_model.CpModel, name: str) -> cp_model.IntVar:
+    """Булева переменная, равная 1 тогда и только тогда, когда все terms == 0."""
+    empty_var = model.NewBoolVar(name)
+    if not terms:
+        model.Add(empty_var == 1)
+    else:
+        # пусто <=> ни один term не равен 1
+        model.AddBoolOr([empty_var] + [term.Not() for term in terms])
+        for term in terms:
+            model.Add(empty_var == 0).OnlyEnforceIf(term)
+    return empty_var
+
+
+def add_lecture_onsite_gap(model: cp_model.CpModel, specs: list[EventSpec],
+                          slot_ids: list[int], day_of_week_by_slot_id: dict[int, int],
+                          pair_placement_vars: dict) -> None:
+    """Между лекцией и очным занятием одного участника в один день — пропуск.
+
+    Лекции онлайн, очные пары требуют присутствия в корпусе; если они стоят
+    подряд без свободного слота между ними, у участника не остаётся времени
+    ни на переход, ни на отдых. Правило предметной области: в один день
+    между первой из них и второй обязательно хотя бы один пустой слот.
+
+    Реализация для каждого участника (учебная группа / студент) и дня:
+    - first_onsite == 1 <=> слот занят первым очным занятия дня (до него
+      очных нет); last_onsite — симметрично для последних очных;
+    - lectures_before = сумма x_лекц по слотам строго до s;
+    - first_onsite + lectures_before <= 1  (перед первым очным лекций нет);
+    - last_onsite + lectures_after <= 1    (после последнего очного лекций нет).
+    Тогда лекция раньше всех очных => перед первым очным есть пустой слот;
+    лекция позже всех очных => после последнего очного есть пустой слот;
+    лекция между очными => соседние очные разделены пустым слотом.
+
+    События с носителями разного вида (поток лекции блокирует группы, ПД —
+    студентов) соединяются через переменные занятости пересечения:
+    busy(g ∩ st, слот) == OR(x_события), где событие блокирует и g, и st.
+
+    Ограничение добавляется только участникам, у которых есть и очное
+    занятие, и лекция (иначе оно ложится на 0=0 и безвредно).
+    """
+    days_of_week = sorted(set(day_of_week_by_slot_id.values()))
+    # slot_ids упорядочены по (day, lesson_number) — см. generator.py
+    day_slot_ids = {
+        day: [slot_id for slot_id in slot_ids if day_of_week_by_slot_id[slot_id] == day]
+        for day in days_of_week
+    }
+
+    onsite_by_group: dict[int, dict[int, list]] = defaultdict(lambda: defaultdict(list))
+    onsite_by_student: dict[int, dict[int, list]] = defaultdict(lambda: defaultdict(list))
+    lecture_by_group: dict[int, dict[int, list]] = defaultdict(lambda: defaultdict(list))
+    lecture_by_student: dict[int, dict[int, list]] = defaultdict(lambda: defaultdict(list))
+    shared_pairs: set[tuple[int, int]] = set()  # (group_id, student_id)
+
+    for spec in specs:
+        is_lecture = spec.lesson_type == LessonType.LECTURE
+        if not (is_lecture or spec.format == Format.ONSITE):
+            continue  # онлайн-занятия не участвуют в правиле
+        target = (lecture_by_group if is_lecture else onsite_by_group)
+        for group_id in spec.blocking_group_ids:
+            for slot_id in slot_ids:
+                target[group_id][slot_id].append(pair_placement_vars[(spec.event_id, slot_id)])
+        target = (lecture_by_student if is_lecture else onsite_by_student)
+        for student_id in spec.blocking_student_ids:
+            for slot_id in slot_ids:
+                target[student_id][slot_id].append(pair_placement_vars[(spec.event_id, slot_id)])
+        for group_id in spec.blocking_group_ids:
+            for student_id in spec.blocking_student_ids:
+                shared_pairs.add((group_id, student_id))
+
+    def collect_terms(terms_by_slot: dict[int, list], day: int, start: int, end: int) -> list:
+        terms = []
+        for slot_id in day_slot_ids[day][start:end]:
+            terms.extend(terms_by_slot.get(slot_id, []))
+        return terms
+
+    def apply_rule(onsite_terms_by_slot: dict[int, list],
+                   lecture_terms_by_slot: dict[int, list],
+                   participant_label: str) -> None:
+        for day in days_of_week:
+            slots = day_slot_ids[day]
+            has_onsite = any(onsite_terms_by_slot.get(slot_id) for slot_id in slots)
+            has_lecture = any(lecture_terms_by_slot.get(slot_id) for slot_id in slots)
+            if not (has_onsite and has_lecture):
+                continue
+            for index, slot_id in enumerate(slots):
+                onsite_here = onsite_terms_by_slot.get(slot_id, [])
+                if not onsite_here:
+                    continue
+                prefix_onsite = collect_terms(onsite_terms_by_slot, day, 0, index)
+                suffix_onsite = collect_terms(onsite_terms_by_slot, day, index + 1, len(slots))
+                lectures_before = collect_terms(lecture_terms_by_slot, day, 0, index)
+                lectures_after = collect_terms(lecture_terms_by_slot, day, index + 1, len(slots))
+
+                onsite_here_bool = model.NewBoolVar(
+                    f"onsh_{participant_label}_{day}_{index}")
+                model.Add(onsite_here_bool == sum(onsite_here))
+
+                first_onsite = model.NewBoolVar(
+                    f"firsto_{participant_label}_{day}_{index}")
+                # first_onsite == onsite_here_bool AND prefix_empty
+                model.AddMultiplicationEquality(first_onsite, [
+                    onsite_here_bool,
+                    _not_any(prefix_onsite, model,
+                             f"nopfx_{participant_label}_{day}_{index}")])
+                if lectures_before:
+                    model.Add(first_onsite + sum(lectures_before) <= 1)
+
+                last_onsite = model.NewBoolVar(f"lasto_{participant_label}_{day}_{index}")
+                suffix_empty = _not_any(suffix_onsite, model,
+                                        f"nosfx_{participant_label}_{day}_{index}")
+                model.AddMultiplicationEquality(last_onsite, [onsite_here_bool, suffix_empty])
+                if lectures_after:
+                    model.Add(last_onsite + sum(lectures_after) <= 1)
+
+    for group_id, terms_by_slot in onsite_by_group.items():
+        apply_rule(terms_by_slot, lecture_by_group[group_id], f"g{group_id}")
+    for student_id, terms_by_slot in onsite_by_student.items():
+        apply_rule(terms_by_slot, lecture_by_student[student_id], f"s{student_id}")
+
+    # Пересечения «группа лекции ∩ студент ПД»: блокировки разных видов
+    # соединяются переменной занятости слота на пересечении.
+    for group_id, student_id in shared_pairs:
+        label = f"gs{group_id}_{student_id}"
+        merged_onsite: dict[int, list] = {}
+        merged_lecture: dict[int, list] = {}
+        for slot_id in slot_ids:
+            for kind, group_terms_map, student_terms_map, merged in (
+                    ("onsite", onsite_by_group[group_id], onsite_by_student[student_id],
+                     merged_onsite),
+                    ("lec", lecture_by_group[group_id], lecture_by_student[student_id],
+                     merged_lecture)):
+                group_terms = group_terms_map.get(slot_id, [])
+                student_terms = student_terms_map.get(slot_id, [])
+                if not (group_terms and student_terms):
+                    continue
+                overlap_var = model.NewBoolVar(f"ovl_{label}_{kind}_{slot_id}")
+                model.AddMaxEquality(overlap_var, [
+                    gp * st for gp in group_terms for st in student_terms])
+                merged.setdefault(slot_id, []).append(overlap_var)
+        if merged_onsite and merged_lecture:
+            apply_rule(merged_onsite, merged_lecture, label)
 
 
 def add_location_consistency(model: cp_model.CpModel, specs: list[EventSpec],

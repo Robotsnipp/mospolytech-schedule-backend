@@ -50,6 +50,7 @@ from .constraints import (
     add_attendee_exclusivity,
     add_day_restrictions,
     add_event_pair_vars,
+    add_lecture_onsite_gap,
     add_lecture_single_slot,
     add_location_consistency,
     add_room_exclusivity,
@@ -147,6 +148,8 @@ def _build_model(*, slots, rooms, specs: list[EventSpec],
     add_attendee_exclusivity(model, specs, slot_ids, pair_placement_vars)
     add_teacher_exclusivity(model, specs, slot_ids, pair_placement_vars)
     add_day_restrictions(model, specs, day_of_week_by_slot_id, pair_placement_vars)
+    add_lecture_onsite_gap(model, specs, slot_ids, day_of_week_by_slot_id,
+                           pair_placement_vars)
     add_location_consistency(model, specs, slot_ids, pair_placement_vars,
                              onsite_room_choice_vars, location_id_by_room_id)
     add_event_pair_vars(model, specs, slot_ids, pair_placement_vars)
