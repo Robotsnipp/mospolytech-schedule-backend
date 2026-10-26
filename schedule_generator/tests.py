@@ -11,6 +11,7 @@ from schedule_generator.models import (
     CurriculumEntry,
     GenerationRun,
     Group,
+    LectureStream,
     LessonEvent,
     Module,
     Room,
@@ -18,6 +19,7 @@ from schedule_generator.models import (
     Semester,
     Student,
     Subject,
+    Teacher,
     TimeSlot,
     WeekPattern,
 )
@@ -176,3 +178,71 @@ class PlanningTests(TestCase):
         # инвариант решателя: в одном слоте аудитория занята не более чем одной парой
         self.assertFalse(first_class.slot_id == second_class.slot_id
                          and first_class.room_id == second_class.room_id)
+
+
+class LectureOnsiteGapTests(TestCase):
+    """Лекция и очное занятие одного участника в один день — только через
+    пропуск; при этом решатель старается делать пропусков как можно меньше."""
+
+    def setUp(self):
+        self.semester = Semester.objects.create(name='GapTest', start_date=date(2026, 9, 1))
+        self.pattern = WeekPattern.objects.create(semester=self.semester)
+        # вторник: три пары подряд (слоты нумеруются lesson_number внутри дня)
+        self.slots = [
+            TimeSlot.objects.create(week_pattern=self.pattern,
+                                     day_of_week=1, lesson_number=number)
+            for number in (1, 2, 3)
+        ]
+        self.subject = Subject.objects.create(name='Math')
+        self.group = Group.objects.create(name='261-101')
+        Student.objects.create(group=self.group, full_name='Студент')
+        self.room = Room.objects.create(name='R', capacity=30)
+        self.teacher = Teacher.objects.create(full_name='Преподаватель')
+        self.stream = LectureStream.objects.create(
+            semester=self.semester, subject=self.subject, teacher=self.teacher)
+        self.stream.groups.add(self.group)
+
+    def lecture_event(self):
+        return LessonEvent.objects.create(
+            semester=self.semester, subject=self.subject,
+            stream=self.stream, teacher=self.teacher,
+            lesson_type=LessonType.LECTURE, pairs_per_week=1)
+
+    def onsite_event(self):
+        return LessonEvent.objects.create(
+            semester=self.semester, subject=self.subject,
+            group=self.group, teacher=self.teacher,
+            lesson_type=LessonType.PRACTICE, pairs_per_week=1)
+
+    def test_lecture_and_onsite_never_adjacent_same_day(self):
+        """Жёсткое правило: между лекцией и очным занятием группы всегда
+        есть хотя бы одна пустая пара (даже когда их больше двух за день)."""
+        self.lecture_event()
+        self.lecture_event()
+        self.onsite_event()
+        result = run_generation(semester=self.semester, time_limit_seconds=5)
+        self.assertEqual(result.status, 'SOLVED')
+        classes = list(ScheduledClass.objects.filter(run_id=result.run_id)
+                       .order_by('slot__lesson_number'))
+        by_slot = {c.slot_id: c.event.lesson_type for c in classes}
+        ordered_slots = [(s.id, s.lesson_number) for s in self.slots]
+        for (slot_a, num_a), (slot_b, num_b) in zip(ordered_slots, ordered_slots[1:]):
+            kinds = {by_slot.get(slot_a), by_slot.get(slot_b)}
+            # соседние по номеру слоты не могут занять лекция и очное одновременно
+            if num_b == num_a + 1:
+                self.assertFalse(
+                    LessonType.LECTURE in kinds
+                    and kinds - {LessonType.LECTURE, None},
+                    f'Лекция и очное стоят подряд в парах {num_a} и {num_b}')
+
+    def test_exactly_one_gap_between_lecture_and_onsite(self):
+        """Минимизация пропусков: лекция и очное разнесены ровно одной
+        пустой парой, а не разбросаны по всему дню."""
+        lecture = self.lecture_event()
+        onsite = self.onsite_event()
+        result = run_generation(semester=self.semester, time_limit_seconds=5)
+        self.assertEqual(result.status, 'SOLVED')
+        classes = ScheduledClass.objects.filter(run_id=result.run_id)
+        lecture_slot = classes.get(event=lecture).slot.lesson_number
+        onsite_slot = classes.get(event=onsite).slot.lesson_number
+        self.assertEqual(abs(lecture_slot - onsite_slot), 2)

@@ -17,7 +17,7 @@ from collections import defaultdict
 
 from ortools.sat.python import cp_model
 
-from ..enums import Format
+from ..enums import Format, LessonType
 from .dto import EventSpec
 
 
@@ -166,6 +166,73 @@ def add_event_pair_vars(model: cp_model.CpModel, specs: list[EventSpec],
         model.Add(missing_pairs >= spec.pairs_per_week - placed_pairs)
         missing_pairs_by_event[spec.event_id] = missing_pairs
     return missing_pairs_by_event
+
+
+def add_lecture_onsite_gap(model: cp_model.CpModel, specs: list[EventSpec],
+                           day_of_week_by_slot_id: dict[int, int],
+                           pair_placement_vars: dict) -> None:
+    """Жёсткое правило: лекция и очное занятие одного участника в один день
+    не могут идти подряд — между ними обязана быть как минимум одна пустая
+    пара (пропуск).
+
+    Соседние слоты считаются внутри дня (см. slot_ids в generator.py —
+    слоты упорядочены по (day_of_week, lesson_number)). Для каждой пары
+    соседних слотов одного дня запрещаем одновременное размещение лекции
+    в первый слот и очного занятия во второй, и наоборот.
+
+    Участник: учебная группа / студент (слушатели), преподаватель (ведущий).
+    Онлайн-лекция аудиторию не занимает, но у участников она всё равно
+    блокирует слот; очные занятия — практики/лабы/ПД/очная внеучебка/ДПО.
+    """
+    lecture_specs = [spec for spec in specs if spec.lesson_type == LessonType.LECTURE]
+    onsite_specs = [spec for spec in specs if spec.format == Format.ONSITE]
+    if not lecture_specs or not onsite_specs:
+        return
+
+    # участники каждого события: группы/студенты-слушатели + преподаватель
+    def participants_of(spec: EventSpec) -> set[tuple[str, int]]:
+        result = {("group", group_id) for group_id in spec.blocking_group_ids}
+        result |= {("student", student_id)
+                   for student_id in spec.blocking_student_ids}
+        if spec.teacher_id is not None:
+            result.add(("teacher", spec.teacher_id))
+        return result
+
+    onsites_by_participant: dict[tuple[str, int], list[EventSpec]] = defaultdict(list)
+    for spec in onsite_specs:
+        for participant in participants_of(spec):
+            onsites_by_participant[participant].append(spec)
+
+    # соседние пары слотов одного дня: [(slot_a, slot_b), ...]
+    slots_by_day: dict[int, list[int]] = defaultdict(list)
+    for slot_id in sorted(day_of_week_by_slot_id, key=lambda sid: (
+            day_of_week_by_slot_id[sid], sid)):
+        slots_by_day[day_of_week_by_slot_id[slot_id]].append(slot_id)
+    adjacent_pairs = [
+        (day_slots[index], day_slots[index + 1])
+        for day_slots in slots_by_day.values()
+        for index in range(len(day_slots) - 1)
+    ]
+
+    for lecture in lecture_specs:
+        lecture_participants = participants_of(lecture)
+        shared_onsites: list[EventSpec] = []
+        for participant in lecture_participants:
+            for onsite in onsites_by_participant.get(participant, ()):
+                if not any(onsite is other for other in shared_onsites):
+                    shared_onsites.append(onsite)
+        if not shared_onsites:
+            continue
+        for slot_a, slot_b in adjacent_pairs:
+            lecture_var_a = pair_placement_vars[(lecture.event_id, slot_a)]
+            lecture_var_b = pair_placement_vars[(lecture.event_id, slot_b)]
+            for onsite in shared_onsites:
+                # лекция раньше, очное сразу после неё — запрещено
+                model.Add(lecture_var_a + pair_placement_vars[
+                    (onsite.event_id, slot_b)] <= 1)
+                # очное раньше, лекция сразу после него — запрещено
+                model.Add(pair_placement_vars[
+                    (onsite.event_id, slot_a)] + lecture_var_b <= 1)
 
 
 def link_onsite_room_vars(model: cp_model.CpModel, specs: list[EventSpec],
