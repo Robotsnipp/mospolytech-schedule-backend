@@ -5,11 +5,12 @@ from __future__ import annotations
 from datetime import date
 
 from django.db.models import Count, Q
+from django.http import HttpResponse
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 
-from . import pd_service
+from . import calendar, pd_service
 from .models import Group, Lesson, PDEnrollment, PDProject, Room, Teacher
 from .pair_times import PAIR_TIMES, VIRTUAL_LOCATIONS, VIRTUAL_MARKERS
 
@@ -104,6 +105,74 @@ def teacher_lessons(request, teacher_id):
     return Response({"teacher": {"id": teacher.id, "name": teacher.name,
                                  "is_vacancy": teacher.is_vacancy},
                      "lessons": [lesson_dict(item, with_group=True) for item in lessons]})
+
+
+# --- Экспорт календаря (.ics) ------------------------------------------------
+
+def _calendar_response(name: str, filename: str, text: str) -> HttpResponse:
+    response = HttpResponse(text, content_type="text/calendar; charset=utf-8")
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response
+
+
+def _personal_events(request, group: Group, lessons: list[Lesson]) -> list[calendar.CalendarEvent]:
+    """Физкультура и выбранный проект владельца — если он из этой группы.
+
+    Как и на фронте: заглушка «Проектная деятельность» (место ПД) заменяется
+    выбранным проектом, слоты физкультуры добавляются к парам группы.
+    """
+    from schedule_generator.models import PEEnrollment
+
+    owner = request.query_params.get("owner")
+    if not owner:
+        return calendar.events_from_lessons(lessons)
+    pe = list(PEEnrollment.objects.filter(owner=owner).select_related("slot", "slot__direction"))
+    pd = (PDEnrollment.objects.filter(owner=owner).select_related("project")
+          .prefetch_related("project__slots").first())
+    if pd is None and not any(e.group_title in ("", group.title) for e in pe):
+        return calendar.events_from_lessons(lessons)  # владелец не из этой группы
+    if pd is not None:
+        lessons = [lesson for lesson in lessons if lesson.location != "ПД"]
+    events = calendar.events_from_lessons(lessons)
+    events += calendar.events_from_pe(pe)
+    if pd is not None:
+        events += calendar.events_from_pd(pd)
+    return events
+
+
+@api_view(["GET"])
+@permission_classes([])
+def group_calendar(request, title):
+    group = Group.objects.filter(title=title).first()
+    if group is None:
+        return Response({"detail": "Группа не найдена."}, status=status.HTTP_404_NOT_FOUND)
+    session = _session(request)
+    lessons = list(_lessons_qs(group=group, is_session=session))
+    if session:
+        events = calendar.events_from_lessons(lessons)
+    else:
+        events = _personal_events(request, group, lessons)
+    text = calendar.build_calendar(f"Расписание {group.title}", events,
+                                   default_from=group.date_from, default_to=group.date_to)
+    return _calendar_response(f"Расписание {group.title}",
+                              f"schedule-{calendar.safe_filename(group.title)}.ics", text)
+
+
+@api_view(["GET"])
+@permission_classes([])
+def teacher_calendar(request, teacher_id):
+    teacher = Teacher.objects.filter(pk=teacher_id).first()
+    if teacher is None:
+        return Response({"detail": "Преподаватель не найден."}, status=status.HTTP_404_NOT_FOUND)
+    lessons = list(_lessons_qs(teachers=teacher, is_session=_session(request)))
+    starts = [lesson.date_from for lesson in lessons if lesson.date_from]
+    ends = [lesson.date_to for lesson in lessons if lesson.date_to]
+    text = calendar.build_calendar(f"Расписание · {teacher.name}",
+                                   calendar.events_from_lessons(lessons, with_group=True),
+                                   default_from=min(starts) if starts else None,
+                                   default_to=max(ends) if ends else None)
+    return _calendar_response(f"Расписание {teacher.name}",
+                              f"schedule-teacher-{teacher.id}.ics", text)
 
 
 @api_view(["GET"])
