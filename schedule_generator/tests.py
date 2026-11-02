@@ -30,8 +30,7 @@ class PlanningTests(TestCase):
         self.module = Module.objects.create(semester=self.semester, number=1, start_date=date(2026, 9, 1), end_date=date(2026, 10, 31), teaching_weeks=9)
         self.other_module = Module.objects.create(semester=self.semester, number=2, start_date=date(2026, 11, 1), end_date=date(2026, 12, 31), teaching_weeks=9)
         self.pattern = WeekPattern.objects.create(semester=self.semester)
-        # вт: пн/ср зарезервированы под ПД, обычные пары там не планируются
-        # (см. services/day_rules.py)
+        # Однослотный сценарий не зависит от мягких предпочтений дней.
         self.slot = TimeSlot.objects.create(week_pattern=self.pattern, day_of_week=1, lesson_number=1)
         self.subject = Subject.objects.create(name='Math')
         self.group = Group.objects.create(name='261-101')

@@ -45,5 +45,5 @@ jobs:
       - run: uv run --no-sync python manage.py check
       - run: uv run --no-sync python manage.py makemigrations --check --dry-run
       - run: uv run --no-sync python manage.py migrate --noinput
-      - run: uv run --no-sync python manage.py test schedule_generator
+      - run: uv run --no-sync python manage.py test schedule_generator rasp
       - run: uv run --no-sync python manage.py test events

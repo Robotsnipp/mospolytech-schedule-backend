@@ -110,6 +110,14 @@ class ScheduleAPITests(TestCase):
         self.assertEqual(pd["travel_buffer_minutes"], 30)
         self.assertEqual(pd["format"], "ONSITE")
 
+    def test_missing_stream_is_json_null_and_lecture_keeps_label(self):
+        response = self.get_schedule()
+        classes = {item["id"]: item for item in response.data["scheduled_classes"]}
+        self.assertIsNone(classes[self.practice.pk]["stream_id"])
+        self.assertIsNone(classes[self.practice.pk]["stream_label"])
+        self.assertEqual(classes[self.lecture.pk]["stream_label"], str(self.stream))
+        self.assertNotIn("method-wrapper", response.content.decode())
+
     def test_student_without_project_choice_gets_common_pairs_and_snapshot_membership(self):
         # Нет reverse OneToOne; фиксированная ПД определяется сохранённым составом.
         response = self.get_schedule(holder=self.peer)

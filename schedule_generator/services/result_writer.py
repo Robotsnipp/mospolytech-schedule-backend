@@ -62,5 +62,6 @@ def persist_result(*, run, generation_result: GenerationResult, slots, rooms, ev
     run.objective_value = generation_result.objective_value
     run.solve_time_seconds = generation_result.solve_time
     run.message = generation_result.message
+    run.solver_diagnostics = generation_result.solver_diagnostics
     run.save()
     return run

@@ -20,8 +20,12 @@
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
+from .api.generation_history import generation_history, generation_history_detail
+from .api.generation_options import generation_options
 from .api.imported import ImportedTeacherViewSet
+from .api.manual_variants import ManualVariantViewSet
 from .api.pe import PEDirectionViewSet, PEEnrollmentViewSet, PESlotViewSet
+from .api.semester_generation import SemesterGenerationViewSet
 from .api.views import (
     BuildingViewSet,
     CommonFreeSlotsViewSet,
@@ -87,6 +91,8 @@ router.register("runs", GenerationRunViewSet, basename="schedule-run")
 router.register("scheduled-classes", ScheduledClassViewSet,
                 basename="scheduled-class")
 router.register("issues", GenerationIssueViewSet, basename="generation-issue")
+router.register("manual-variants", ManualVariantViewSet, basename="manual-variant")
+router.register("semester-generations", SemesterGenerationViewSet, basename="semester-generation")
 
 # --- Просмотр расписания потребителями --------------------------------------
 router.register("schedule/groups", GroupScheduleViewSet, basename="schedule-group")
@@ -107,5 +113,8 @@ router.register("replan", ReplanViewSet, basename="schedule-replan")
 router.register("", GenerateViewSet, basename="schedule-generate")
 
 urlpatterns = [
+    path("generation-options/", generation_options, name="generation-options"),
+    path("generation-history/", generation_history, name="generation-history"),
+    path("generation-history/<int:run_id>/", generation_history_detail, name="generation-history-detail"),
     path("", include(router.urls)),
 ]

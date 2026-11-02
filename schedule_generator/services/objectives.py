@@ -186,8 +186,9 @@ def build_objective(
     teacher_overload_vars: list,
     extra_penalties: Iterable[WeightedTerm] = (),
     extra_rewards: Iterable[WeightedTerm] = (),
+    priority_levels=(),
 ) -> None:
-    """Строгий порядок: число пар → число лекций → мягкие штрафы.
+    """Число пар → число лекций → ordered preference levels → прежнее удобство.
 
     Верхние границы штрафных переменных задают веса: уменьшение окон не
     компенсирует потерю пары. При равном числе пар сохраняется приоритет лекций.
@@ -207,6 +208,13 @@ def build_objective(
     quality_bound += sum(weight * sum(max(v.proto.domain) for v in variables)
                          for weight, variables in extra_rewards)
     rewards = sum(weight * sum(variables) for weight, variables in extra_rewards)
+    quality_score = rewards - quality
+    # One unit of a higher tier dominates the entire range of lower tiers.
+    # All counters have mathematically safe occurrence-based bounds.
+    for variable, maximize in reversed(tuple(priority_levels)):
+        weight = quality_bound + 1
+        quality_score += weight * variable * (1 if maximize else -1)
+        quality_bound += weight * max(variable.proto.domain)
     lecture_bound = sum(
         spec.pairs_per_week for spec in specs if spec.lesson_type == LessonType.LECTURE
     )
@@ -219,7 +227,7 @@ def build_objective(
         if spec.lesson_type == LessonType.LECTURE
         for slot_id in slot_ids
     )
-    model.Maximize(pair_weight * placed + lecture_weight * lectures - quality + rewards)
+    model.Maximize(pair_weight * placed + lecture_weight * lectures + quality_score)
 
 
 def _placement_terms_by_attendee(specs: list[EventSpec], slot_ids: list[int],
