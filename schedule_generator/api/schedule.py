@@ -10,7 +10,8 @@ class ScheduleRunSerializer(serializers.ModelSerializer):
     class Meta:
         model = GenerationRun
         fields = ["id", "semester", "module", "created_at", "status", "message",
-                  "objective_value", "solve_time_seconds"]
+                  "objective_value", "solve_time_seconds", "solver_diagnostics",
+                  "settings_snapshot", "input_snapshot", "validation_snapshot"]
 
 
 class FixedPDSessionSerializer(serializers.Serializer):

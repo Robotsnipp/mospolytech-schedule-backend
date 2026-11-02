@@ -20,9 +20,8 @@
   жёстко. Дополнительная площадка не требует аудитории Политеха.
 - Внеучебка: может быть очной или онлайн (поле format на событии);
   очная занимает аудиторию, онлайн — нет. Тоже участвует в генерации.
-- Дни ПД: проектная деятельность занимает понедельники и среды; в эти дни
-  обычные пары (практики/лабы/лекции) не планируются (services/day_rules.py,
-  add_day_restrictions).
+- Генерируемая ПД назначается по понедельникам и средам. Обычные пары
+  разрешены пн–сб; фиксированная ПД блокирует только интервалы и участников.
 - Локации: корпуса стоят на разных локациях, между каждым час езды,
   поэтому один участник (группа/студент/преподаватель) не может в одном
   слоте находиться на двух разных локациях (add_location_consistency);
@@ -54,6 +53,7 @@ Soft-ограничения (штрафы в целевой функции, см
 from __future__ import annotations
 
 import time
+from math import isfinite
 
 from ortools.sat.python import cp_model
 
@@ -77,6 +77,11 @@ from .constraints import (
     add_teacher_exclusivity,
     link_onsite_room_vars,
 )
+from .distribution import (
+    BALANCE_PERSON_WEIGHT,
+    LATE_PERSON_PENALTY,
+    collect_daily_distribution_penalties,
+)
 from .dto import EventSpec, GenerationResult
 from .objectives import (
     build_objective,
@@ -87,6 +92,12 @@ from .objectives import (
     collect_window_penalties,
 )
 from .solution import extract_result
+from .teaching_preferences import (
+    PREFERENCE_VERSION,
+    SATURDAY_PERSON_PENALTY,
+    SUBJECT_BLOCK_REWARD,
+    collect_teaching_preferences,
+)
 
 
 def generate_schedule(
@@ -125,6 +136,12 @@ def generate_schedule(
                                 [spec.event_id for spec in specs],
                                 "Нет доступных слотов (шаблон недели пуст).")
 
+    validation_error = model.Validate()
+    if validation_error:
+        return GenerationResult("ERROR", None, time.time() - start_time, [],
+                                [spec.event_id for spec in specs],
+                                f"status=MODEL_INVALID, preferences={PREFERENCE_VERSION}: {validation_error}")
+
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = float(solver_config.time_limit_seconds)
     solver.parameters.random_seed = solver_config.seed
@@ -141,6 +158,29 @@ def generate_schedule(
         onsite_room_choice_vars=model_context["onsite_room_choice_vars"],
     )
     result.solve_time = time.time() - start_time
+    bound = solver.BestObjectiveBound()
+    incumbent = solver.ObjectiveValue() if feasible else None
+    result.solver_diagnostics = {
+        "status": status_name, "proven_optimal": status == cp_model.OPTIMAL,
+        "incumbent_objective": incumbent,
+        "best_objective_bound": bound if isfinite(bound) else None,
+        "relative_gap": max(0.0, (bound - incumbent) / max(1.0, abs(incumbent))) if feasible else None,
+        "time_limit_seconds": solver_config.time_limit_seconds,
+        "wall_time_seconds": result.solve_time, "preferences": PREFERENCE_VERSION,
+    }
+    if feasible:
+        counts = {name: solver.Value(value) for name, value in model_context["teaching_preferences"].items()}
+        result.solver_diagnostics["preference_counts"] = counts
+        result.solver_diagnostics["distribution"] = {
+            "weekday_load_cost": sum(solver.Value(value) for value in model_context["daily_distribution_penalties"]),
+            "balance_person_weight": BALANCE_PERSON_WEIGHT, "pair_minutes": 90,
+            "late_person_penalty": LATE_PERSON_PENALTY,
+            "saturday_person_penalty": SATURDAY_PERSON_PENALTY,
+        }
+        result.message += (f", preferences={PREFERENCE_VERSION}, saturday={counts['saturday']}, "
+                           f"lecture_applied={counts['lecture_applied']}, subject_blocks={counts['subject_blocks']}")
+    else:
+        result.message += f", preferences={PREFERENCE_VERSION}"
     return result
 
 
@@ -211,6 +251,15 @@ def _build_model(*, slots, rooms, specs: list[EventSpec],
         model, specs, slot_ids, day_of_week_by_slot_id, pair_placement_vars,
         preferences.free_days_per_group)
     pinned_vars = _pinned_vars(pinned, pair_placement_vars, onsite_room_choice_vars)
+    teaching = collect_teaching_preferences(model=model, specs=specs, slots=slot_list,
+                                            pair_placement_vars=pair_placement_vars)
+    distribution = collect_daily_distribution_penalties(model, specs, slot_list, pair_placement_vars, fixed_pd)
+    # Replanning keeps already agreed placements ahead of new convenience rules.
+    preservation = []
+    if pinned_vars:
+        kept = model.NewIntVar(0, len(pinned_vars), "preserved_placements")
+        model.Add(kept == sum(pinned_vars))
+        preservation.append((kept, True))
     build_objective(
         model, specs, slot_ids, pair_placement_vars, window_vars, teacher_overload_vars,
         extra_penalties=[
@@ -218,14 +267,21 @@ def _build_model(*, slots, rooms, specs: list[EventSpec],
             (PENALTY_FATIGUE_PEAK, fatigue_peak_vars),
             (PENALTY_CHRONOTYPE, chronotype_vars),
             (PENALTY_FREE_DAY_VIOLATION, free_day_violation_vars),
+            (SATURDAY_PERSON_PENALTY, [teaching["saturday_people"]]),
+            (LATE_PERSON_PENALTY, [teaching["late_people"]]),
+            (1, distribution),
         ],
-        extra_rewards=[(PIN_BONUS, pinned_vars)],
+        extra_rewards=[(PIN_BONUS, pinned_vars), (SUBJECT_BLOCK_REWARD, [teaching["subject_blocks"]])],
+        priority_levels=[*preservation, (teaching["lecture_applied"], True),
+                         (teaching["applied_lecture"], False)],
     )
 
     return model, {
         "pair_placement_vars": pair_placement_vars,
         "onsite_room_choice_vars": onsite_room_choice_vars,
         "room_ids": room_ids,
+        "teaching_preferences": teaching,
+        "daily_distribution_penalties": distribution,
     }
 
 

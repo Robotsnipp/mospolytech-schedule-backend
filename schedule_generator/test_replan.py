@@ -36,10 +36,14 @@ class ReplanTestCase(TestCase):
     def setUp(self):
         self.semester = Semester.objects.create(name="R", start_date=date(2026, 9, 1))
         pattern = WeekPattern.objects.create(semester=self.semester)
+        times = {2: (time(10, 40), time(12, 10)), 3: (time(12, 20), time(13, 50)),
+                 4: (time(14, 30), time(16))}
         for day in (TUESDAY, THURSDAY):
             for lesson_number in (2, 3, 4):
                 TimeSlot.objects.create(week_pattern=pattern, day_of_week=day,
-                                        lesson_number=lesson_number)
+                                        lesson_number=lesson_number,
+                                        start_time=times[lesson_number][0],
+                                        end_time=times[lesson_number][1])
         subject = Subject.objects.create(name="Math")
         self.group_a = Group.objects.create(name="261-101")
         self.group_b = Group.objects.create(name="261-102")
@@ -82,11 +86,6 @@ class TeacherDisruptionTests(ReplanTestCase):
         self.assertNotIn(self.sick_day, teacher_days)
 
     def test_replan_preserves_fixed_pd_snapshot_and_student_conflicts(self):
-        times = {2: (time(10, 40), time(12, 10)), 3: (time(12, 20), time(13, 50)),
-                 4: (time(14, 30), time(16))}
-        for slot in TimeSlot.objects.all():
-            slot.start_time, slot.end_time = times[slot.lesson_number]
-            slot.save(update_fields=["start_time", "end_time"])
         supervisor = Teacher.objects.create(full_name="PD supervisor")
         project = Project.objects.create(semester=self.semester, title="Fixed project", supervisor=supervisor)
         student = Student.objects.create(group=self.group_a, full_name="Participant")

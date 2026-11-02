@@ -23,7 +23,7 @@
 | В аудитории в слоте не больше одного очного занятия | `constraints.add_room_exclusivity` |
 | Группа или студент в слоте занят не более чем одним занятием | `constraints.add_attendee_exclusivity` |
 | Преподаватель ведёт не более одного занятия в слоте | `constraints.add_teacher_exclusivity` |
-| ПД только пн и ср; обычные пары вт, чт, пт, сб; внеучебка и ДПО в любой день | `day_rules.py`, `constraints.add_day_restrictions` |
+| Генерируемая ПД пн/ср; обычные пары, внеучебка и ДПО пн–сб. Фиксированная ПД блокирует свой интервал и участников | `day_rules.py`, `constraints.add_day_restrictions`, `constraints.add_fixed_pd_constraints` |
 | Вместимость аудитории не меньше числа слушателей; онлайн-занятие аудитории не занимает | `generator._build_variables`, `constraints.link_onsite_room_vars` |
 | Участник не бывает на двух разных локациях в одном слоте | `constraints.add_location_consistency` |
 | Участник не бывает на разных локациях в соседних слотах одного дня (дорога занимает час, перерыв короче) | `constraints.add_location_consistency`, `config.TRAVEL_BUFFER_SLOTS` |
@@ -43,6 +43,14 @@
 | Самый тяжёлый день среди всех групп | `PENALTY_FATIGUE_PEAK` за единицу | `objectives.collect_fatigue_penalties` |
 | Пара не в «своё» время преподавателя (жаворонок или сова) | `PENALTY_CHRONOTYPE` за пару | `objectives.collect_chronotype_penalties` |
 | Группа занята больше дней, чем позволяет режим подготовки к сессии | `PENALTY_FREE_DAY_VIOLATION` за день | `objectives.collect_free_day_penalties` |
+| Ровная личная нагрузка пн–пт, включая собственную ПД | floor(10 × люди × минуты дня² / 8100) | `distribution.collect_daily_distribution_penalties` |
+| Субботняя пара как запасной вариант | 60 за слушателя и преподавателя | `teaching_preferences` |
+| Поздняя пара (6/7) | 20 за слушателя и преподавателя | `distribution.LATE_PERSON_PENALTY` |
+
+Суббота не включена в выравнивание будней. ПД учитывается только для своих
+участников, не как шесть проектов у каждого студента. Это мягкие оценки,
+не дневная квота и не обещание отсутствия окон. Полнота нагрузки приоритетнее
+удобства; связки лекции с практикой/лабораторной также предпочтительны.
 
 ### Индекс усталости
 

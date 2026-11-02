@@ -69,6 +69,10 @@ class Room(models.Model):
     room_type = models.CharField("Тип помещения", max_length=50, blank=True)
     equipment = models.TextField("Оборудование", blank=True)
     capacity = models.PositiveSmallIntegerField("Вместимость", default=30)
+    confirmed_capacity = models.PositiveSmallIntegerField(
+        "Подтверждённая вместимость", null=True, blank=True)
+    provenance = models.JSONField("Источник характеристик", default=dict, blank=True)
+    profile_only = models.BooleanField("Только в отдельном ресурсном профиле", default=False)
     allows_lecture = models.BooleanField("Подходит для лекций", default=True)
 
     class Meta:
@@ -121,3 +125,18 @@ class LectureStream(models.Model):
 
     def __str__(self):
         return f"{self.subject} ({', '.join(g.name for g in self.groups.all())})"
+
+
+class ResourceProfile(models.Model):
+    """Explicit scenario pool; assumptions never overwrite university room facts."""
+
+    key = models.SlugField(max_length=100, unique=True)
+    name = models.CharField(max_length=150)
+    notice = models.TextField(blank=True)
+    semester = models.ForeignKey("schedule_generator.Semester", on_delete=models.PROTECT)
+    group = models.ForeignKey("schedule_generator.Group", on_delete=models.PROTECT)
+    rooms = models.JSONField(default=list)
+    provenance = models.JSONField(default=dict, blank=True)
+
+    def __str__(self):
+        return self.name
