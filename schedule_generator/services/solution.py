@@ -26,7 +26,8 @@ def extract_result(solver: cp_model.CpSolver, status_name: str, feasible: bool,
 
     if not feasible:
         return GenerationResult(
-            status="INFEASIBLE",
+            status=("INFEASIBLE" if status_name == "INFEASIBLE" else
+                    "UNKNOWN" if status_name == "UNKNOWN" else "ERROR"),
             objective_value=None,
             solve_time=0.0,  # заполняет вызывающий (generator.generate_schedule)
             assignments=[],

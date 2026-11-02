@@ -31,7 +31,7 @@ from schedule_generator.services.dto import EventSpec
 from schedule_generator.services.generation import run_generation
 from schedule_generator.services.objectives import collect_fatigue_penalties
 
-TUESDAY, THURSDAY = 1, 3   # обычные пары идут вт, чт, пт, сб (day_rules.py)
+TUESDAY, THURSDAY = 1, 3
 SEEDS = range(1, 7)
 
 
@@ -53,13 +53,16 @@ class WellbeingTestCase(TestCase):
             lesson_type=LessonType.PRACTICE, teacher=teacher, pairs_per_week=pairs)
 
     def two_day_scenario(self):
-        """Два дня по два слота и два события одной группы: без режима сессии
+        """Два дня по два слота и разные предметы группы: без режима сессии
         нагрузка расходится по дням, с ним собирается в один день."""
         for day in (TUESDAY, THURSDAY):
             self.slot(day, 2)
             self.slot(day, 3)
         self.event()
-        self.event()
+        second = self.event()
+        # Isolate the free-day preference, without the stronger same-subject block.
+        second.subject = Subject.objects.create(name="Other subject")
+        second.save(update_fields=["subject"])
 
     def generate(self, **kwargs):
         outcome = run_generation(semester=self.semester, time_limit_seconds=5, **kwargs)

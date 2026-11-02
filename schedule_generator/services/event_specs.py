@@ -84,6 +84,7 @@ def build_event_specs(events) -> tuple[list[EventSpec], list[tuple]]:
 
         specs.append(EventSpec(
             event_id=event.id,
+            subject_id=event.subject_id,
             lesson_type=event.lesson_type,
             format=lesson_format,
             pairs_per_week=event.pairs_per_week,
