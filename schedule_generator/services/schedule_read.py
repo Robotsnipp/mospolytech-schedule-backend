@@ -26,7 +26,8 @@ def resolve_schedule_run(*, semester=None, module=None, run_id=None, week_patter
         if module is None and not period_runs.filter(module__isnull=True).exists() \
                 and period_runs.filter(module__isnull=False).exists():
             raise ValidationError({"module": "Укажите модуль или run_id модульного расписания."})
-        run = (period_runs.filter(module=module, status__in=["SOLVED", "PARTIAL"])
+        run = (period_runs.filter(module=module, status__in=["SOLVED", "PARTIAL"],
+                                  dpo_program__isnull=True)
                .order_by("-created_at", "-pk").first())
     if week_pattern is not None and week_pattern.semester_id != semester.pk:
         raise ValidationError({"week_pattern": "Шаблон недели относится к другому семестру."})
@@ -36,6 +37,7 @@ def resolve_schedule_run(*, semester=None, module=None, run_id=None, week_patter
 def _holder_filter(kind, holder):
     if kind == "student":
         return (Q(event__group_id=holder.group_id)
+                | Q(event__group__dpo_memberships__student=holder)
                 | Q(event__stream__groups=holder.group_id)
                 | Q(event__project__enrollments__student=holder))
     if kind == "group":

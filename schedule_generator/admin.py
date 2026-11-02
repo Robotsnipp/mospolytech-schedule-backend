@@ -14,6 +14,9 @@ from .models import (
     Building,
     Curriculum,
     CurriculumEntry,
+    DPODiscipline,
+    DPOMembership,
+    DPOProgram,
     FixedProjectSession,
     GenerationIssue,
     GenerationRun,
@@ -219,3 +222,24 @@ class ModuleAdmin(admin.ModelAdmin):
 
 
 admin.site.register(CurriculumEntry)
+
+
+class DPODisciplineInline(admin.TabularInline):
+    model = DPODiscipline
+    extra = 0
+
+
+@admin.register(DPOProgram)
+class DPOProgramAdmin(admin.ModelAdmin):
+    list_display = ("name", "semester", "module", "weeks", "base_run")
+    list_filter = ("semester",)
+    filter_horizontal = ("groups",)
+    inlines = [DPODisciplineInline]
+
+
+@admin.register(DPOMembership)
+class DPOMembershipAdmin(admin.ModelAdmin):
+    list_display = ("student", "group")
+    list_filter = ("group",)
+    search_fields = ("student__full_name", "group__name")
+    autocomplete_fields = ("student",)

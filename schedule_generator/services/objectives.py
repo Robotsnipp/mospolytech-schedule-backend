@@ -76,7 +76,8 @@ def _attendance_profiles(specs, fixed_pd):
         interval = (session.day_of_week, session.start_minute, session.end_minute)
         for student_id in session.student_ids:
             fixed_by_person["student", student_id].add(interval)
-        fixed_by_person["teacher", session.teacher_id].add(interval)
+        if session.teacher_id is not None:
+            fixed_by_person["teacher", session.teacher_id].add(interval)
     profiles = Counter()
     for person in events_by_person.keys() | fixed_by_person.keys():
         # Датированные ПД разных недель могут перекрываться в консервативном
