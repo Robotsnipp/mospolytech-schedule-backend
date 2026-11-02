@@ -437,6 +437,18 @@ python manage.py import_rasp --groups 231-333,24А-111 --session 0 --refresh --c
 `teachers/<id>/lessons/`, `rooms/free/?weekday=&pair=&date=`, `pair-times/`.
 Время пар хранится в одном месте — `rasp/pair_times.py`.
 
+### Экспорт календаря (.ics)
+
+`GET /api/rasp/groups/<номер>/calendar/?session=0|1` и `GET /api/rasp/teachers/<id>/calendar/?session=0|1`
+отдают файл iCalendar (`text/calendar`, `Content-Disposition: attachment`). Каждое занятие —
+один VEVENT с `RRULE:FREQ=WEEKLY` до конца своего периода действия; времена пар переводятся
+в UTC по фиксированному смещению Москвы (+3, летнее время не действует). UID стабильны,
+поэтому повторный импорт обновляет события, а не дублирует их.
+
+Параметр `owner` (идентификатор браузера, как у физкультуры/ПД) добавляет в календарь группы
+личные записи — слоты физкультуры и выбранный проект; заглушка «Проектная деятельность» при
+этом заменяется проектом. Логика сборки — `rasp/calendar.py`, тесты — `rasp/tests/test_calendar.py`.
+
 ## Физкультура (реальное расписание из PDF)
 Слоты физкультуры берутся из PDF «Расписание элективных дисциплин по физической культуре» (`data/pe/*.pdf`).
 Разбор PDF → `data/pe/pe_schedule.json` (нужен `pdfplumber`, в зависимости проекта не входит):
