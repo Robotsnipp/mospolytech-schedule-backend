@@ -3,6 +3,7 @@
 
 import logging
 
+from django.db.models.deletion import ProtectedError
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import exception_handler
@@ -11,6 +12,9 @@ logger = logging.getLogger(__name__)
 
 
 def api_exception_handler(exc, context):
+    if isinstance(exc, ProtectedError):
+        return Response({"detail": "Запись используется сохранённым расписанием; удаление запрещено."},
+                        status=status.HTTP_409_CONFLICT)
     response = exception_handler(exc, context)
     if response is not None:
         return response

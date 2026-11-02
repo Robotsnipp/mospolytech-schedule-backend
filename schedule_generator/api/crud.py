@@ -17,6 +17,9 @@
 
 from __future__ import annotations
 
+from copy import copy
+
+from django.core.exceptions import ValidationError as DjangoValidationError
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
@@ -65,8 +68,8 @@ class WeekPatternSerializer(serializers.ModelSerializer):
     class Meta:
         model = WeekPattern
         fields = ["id", "semester", "semester_name", "name", "parity",
-                  "parity_display", "display"]
-        read_only_fields = ["semester_name", "parity_display"]
+                  "parity_display", "display", "bell_schedule"]
+        read_only_fields = ["semester_name", "parity_display", "bell_schedule"]
 
     @extend_schema_field(serializers.CharField())
     def get_parity_display(self, obj):
@@ -121,6 +124,14 @@ class TimeSlotSerializer(serializers.ModelSerializer):
         end = attrs.get("end_time", getattr(instance, "end_time", None))
         if start and end and end <= start:
             raise serializers.ValidationError({"end_time": "Конец должен быть позже начала."})
+        if instance is not None:
+            candidate = copy(instance)
+            for field, value in attrs.items():
+                setattr(candidate, field, value)
+            try:
+                candidate.validate_history()
+            except DjangoValidationError as exc:
+                raise serializers.ValidationError(exc.messages) from exc
         return attrs
 
 
@@ -252,7 +263,7 @@ class RoomSerializer(serializers.ModelSerializer):
         model = Room
         fields = ["id", "name", "building", "building_name", "location_name",
                   "is_active", "room_type", "equipment", "capacity",
-                  "allows_lecture", "display"]
+                  "confirmed_capacity", "provenance", "profile_only", "allows_lecture", "display"]
         read_only_fields = ["building_name"]
 
     @extend_schema_field(serializers.CharField())
@@ -508,8 +519,7 @@ class ScheduledClassSerializer(serializers.ModelSerializer):
     lesson_type = serializers.CharField(source="event.lesson_type", read_only=True)
     group_name = serializers.CharField(source="event.group.name", read_only=True,
                                        default=None)
-    stream_label = serializers.CharField(source="event.stream.__str__",
-                                         read_only=True, default=None)
+    stream_label = serializers.SerializerMethodField()
     project_title = serializers.CharField(source="event.project.title",
                                           read_only=True, default=None)
     teacher_name = serializers.SerializerMethodField()
@@ -525,6 +535,29 @@ class ScheduledClassSerializer(serializers.ModelSerializer):
     group_ids = serializers.SerializerMethodField()
     student_ids = serializers.SerializerMethodField()
 
+    def to_representation(self, instance):
+        result = super().to_representation(instance)
+        snapshot = instance.run.input_snapshot
+        if not snapshot:
+            return result
+        event = next((item for item in snapshot.get("events", []) if item["id"] == instance.event_id), None)
+        slot = next((item for item in snapshot.get("slots", []) if item["id"] == instance.slot_id), None)
+        room = next((item for item in snapshot.get("rooms", []) if item["id"] == instance.room_id), None)
+        if event and slot:
+            result.update(subject_name=event["subject_name"], lesson_type=event["lesson_type"],
+                          format=event["format"], teacher_id=event.get("teacher_id"),
+                          teacher_name=event.get("teacher_name"), group_id=event.get("group_id"),
+                          group_name=event.get("group_name"), stream_id=event.get("stream_id"),
+                          stream_label=event.get("stream_name") or None,
+                          subject_id=event.get("subject_id"), group_ids=event.get("blocking_group_ids", []),
+                          student_ids=event.get("student_ids", []),
+                          slot_day=slot["day_of_week"], slot_lesson_number=slot["lesson_number"],
+                          slot_start_time=slot["start_time"], slot_end_time=slot["end_time"],
+                          week_pattern=snapshot["week_pattern_id"],
+                          room_name=room["name"] if room else None,
+                          location_name=room.get("location_name", "") if room else "")
+        return result
+
     class Meta:
         model = ScheduledClass
         fields = ["id", "run", "event", "subject_name", "lesson_type",
@@ -537,6 +570,10 @@ class ScheduledClassSerializer(serializers.ModelSerializer):
     @extend_schema_field(serializers.CharField())
     def get_location_name(self, obj):
         return obj.room.location_name_for_ui() if obj.room_id else ""
+
+    @extend_schema_field(serializers.CharField(allow_null=True))
+    def get_stream_label(self, obj):
+        return str(obj.event.stream) if obj.event.stream_id else None
 
     @extend_schema_field(serializers.IntegerField(allow_null=True))
     def get_teacher_id(self, obj):
@@ -602,7 +639,7 @@ class GenerationRunListSerializer(serializers.ModelSerializer):
         model = GenerationRun
         fields = ["id", "semester", "module", "created_at", "status",
                   "status_display", "objective_value", "solve_time_seconds",
-                  "message", "display", "classes_count", "issues_count"]
+                  "message", "display", "classes_count", "issues_count", "solver_diagnostics"]
 
 
 class GenerationRunSerializer(serializers.ModelSerializer):
@@ -617,4 +654,5 @@ class GenerationRunSerializer(serializers.ModelSerializer):
         model = GenerationRun
         fields = ["id", "semester", "module", "created_at", "status",
                   "status_display", "objective_value", "solve_time_seconds",
-                  "message", "scheduled_classes", "fixed_pd_snapshot", "issues"]
+                  "message", "scheduled_classes", "fixed_pd_snapshot", "issues", "solver_diagnostics",
+                  "settings_snapshot", "input_snapshot", "validation_snapshot"]

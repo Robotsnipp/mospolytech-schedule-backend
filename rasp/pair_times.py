@@ -2,14 +2,12 @@
 
 from datetime import time
 
+from schedule_generator.bell_profiles import PROFILES
+
+# Published Moscow daytime data uses this profile; other forms must choose theirs.
 PAIR_TIMES: dict[int, tuple[time, time]] = {
-    1: (time(9, 0), time(10, 30)),
-    2: (time(10, 40), time(12, 10)),
-    3: (time(12, 20), time(13, 50)),
-    4: (time(14, 30), time(16, 0)),
-    5: (time(16, 10), time(17, 40)),
-    6: (time(17, 50), time(19, 20)),
-    7: (time(19, 30), time(21, 0)),
+    number: (time.fromisoformat(start), time.fromisoformat(end))
+    for number, start, end in PROFILES["MOSCOW_DAY"]["times"]
 }
 
 # «Места», которые не являются физическими аудиториями.

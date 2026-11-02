@@ -108,7 +108,7 @@ def _fixed_pd_for(run, kind, holder, week_pattern):
 def with_schedule_details(classes):
     """Общий граф данных для ScheduledClassSerializer без запросов на каждую пару."""
     return (classes.select_related(
-        "slot__week_pattern__semester", "room__building__location", "event__subject", "event__group",
+        "run", "slot__week_pattern__semester", "room__building__location", "event__subject", "event__group",
         "event__stream__subject", "event__project__supervisor", "event__teacher")
         .prefetch_related("event__stream__groups", "event__project__enrollments__student"))
 
@@ -116,11 +116,25 @@ def with_schedule_details(classes):
 def read_schedule(*, run, kind="all", holder=None, week_pattern=None):
     if run is None:
         return {"run": None, "scheduled_classes": [], "fixed_pd_snapshot": [], "issues": []}
-    classes = (with_schedule_details(run.scheduled_classes.filter(_holder_filter(kind, holder)))
+    holder_filter = _holder_filter(kind, holder)
+    if run.input_snapshot and holder is not None:
+        events = run.input_snapshot.get("events", [])
+        def belongs(event):
+            if kind == "student":
+                return holder.pk in event.get("student_ids", [])
+            if kind == "group":
+                return holder.pk in event.get("blocking_group_ids", []) or event.get("group_id") == holder.pk
+            if kind == "teacher":
+                return event.get("teacher_id") == holder.pk
+            if kind == "stream":
+                return event.get("stream_id") == holder.pk
+            return True
+        holder_filter = Q(event_id__in=[event["id"] for event in events if belongs(event)])
+    classes = (with_schedule_details(run.scheduled_classes.filter(holder_filter))
                .distinct().order_by("slot__day_of_week", "slot__lesson_number", "pk"))
     if week_pattern is not None:
         classes = classes.filter(slot__week_pattern=week_pattern)
-    issues = (run.issues.filter(Q(event__isnull=True) | _holder_filter(kind, holder))
+    issues = (run.issues.filter(Q(event__isnull=True) | holder_filter)
               .select_related("event").distinct().order_by("pk"))
     return {"run": run, "scheduled_classes": classes, "issues": issues,
             "fixed_pd_snapshot": _fixed_pd_for(run, kind, holder, week_pattern)}

@@ -12,6 +12,7 @@ from rest_framework import serializers
 
 from ..models import (
     GenerationRun,
+    Group,
     Module,
     Room,
     Semester,
@@ -71,6 +72,22 @@ class GenerateRequestSerializer(serializers.Serializer):
                   "оставить каждой группе свободными. 0 — режим выключен.",
     )
 
+    group = serializers.PrimaryKeyRelatedField(queryset=Group.objects.all(), required=False)
+    settings = serializers.JSONField(required=False)
+    resource_profile = serializers.CharField(required=False)
+
+    def to_internal_value(self, data):
+        if "settings" in data:
+            allowed = {"semester", "module", "week_pattern", "group", "settings", "resource_profile", "clear_previous"}
+            unknown = set(data) - allowed
+            if unknown:
+                raise serializers.ValidationError({"settings": "Не смешивайте старые параметры с settings: " + ", ".join(sorted(unknown))})
+            if data.get("clear_previous", False) is not False:
+                raise serializers.ValidationError({"clear_previous": "Новый режим всегда сохраняет историю; нужно false."})
+        elif "group" in data or "resource_profile" in data:
+            raise serializers.ValidationError({"settings": "Выбор группы и ресурсов требует settings."})
+        return super().to_internal_value(data)
+
     def validate(self, attrs):
         week_pattern = attrs.get("week_pattern")
         semester = attrs["semester"]
@@ -81,6 +98,17 @@ class GenerateRequestSerializer(serializers.Serializer):
         module = attrs.get("module")
         if module is not None and module.semester_id != semester.id:
             raise serializers.ValidationError({"module": "Модуль относится к другому семестру."})
+        if "settings" in attrs:
+            from ..services.settings import normalize_settings
+            try:
+                attrs["settings"] = normalize_settings(attrs["settings"])
+            except ValueError as exc:
+                raise serializers.ValidationError({"settings": str(exc)}) from exc
+            if not attrs.get("group") or not attrs.get("resource_profile"):
+                raise serializers.ValidationError({"settings": "Нужны выбранные group и resource_profile."})
+            if attrs["group"].semester_id != semester.pk:
+                raise serializers.ValidationError({"group": "Группа относится к другому периоду."})
+            attrs["clear_previous"] = False
         return attrs
 
 
@@ -139,6 +167,11 @@ class ReplanRequestSerializer(serializers.Serializer):
     time_limit_seconds = serializers.IntegerField(required=False, default=30, min_value=1,
                                                   max_value=600)
     seed = serializers.IntegerField(required=False, default=17)
+
+    def validate_run(self, run):
+        if run.settings_snapshot:
+            raise serializers.ValidationError("Новый режим настроек не поддерживает старый replan; создайте отдельный ручной вариант.")
+        return run
 
 
 class ReplanResultSerializer(serializers.Serializer):

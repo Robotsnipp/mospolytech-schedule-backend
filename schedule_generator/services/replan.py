@@ -66,6 +66,8 @@ def replan_after_disruption(*, run, teacher=None, unavailable_days=None, room=No
     :raises ReplanError: некорректные параметры, неудачный исходный запуск или
         сбой, не затрагивающий ни одной пары.
     """
+    if run.settings_snapshot:
+        raise ReplanError("Перепланирование нового режима не поддерживается: используйте ручной вариант или новый расчёт с сохранёнными настройками.")
     unavailable_days = set(unavailable_days or ())
     _validate(run=run, teacher=teacher, unavailable_days=unavailable_days, room=room)
 
@@ -80,7 +82,7 @@ def replan_after_disruption(*, run, teacher=None, unavailable_days=None, room=No
                     else run.semester.week_patterns.order_by("id").first())
     slots = list(TimeSlot.objects.filter(week_pattern=week_pattern)
                  .order_by("day_of_week", "lesson_number"))
-    available_rooms = Room.objects.filter(is_active=True)
+    available_rooms = Room.objects.filter(is_active=True, profile_only=False)
     if room is not None:
         available_rooms = available_rooms.exclude(id=room.id)
     rooms = list(available_rooms.select_related("building", "building__location"))

@@ -42,6 +42,8 @@ class EventSpec:
     # Полный состав слушателей для персональной оценки окон: обычные пары
     # группы/потока вместе с ПД конкретного студента.
     attending_student_ids: set[int] = field(default_factory=set)
+    # Identity, not a label: thematic ordering requires the same subject and cohort.
+    subject_id: int | None = None
 
 
 @dataclass(frozen=True)
@@ -70,6 +72,7 @@ class GenerationResult:
     assignments: list[dict]        # {event_id, slot_id, room_id|None}
     unscheduled_event_ids: list[int]
     message: str = ""
+    solver_diagnostics: dict = field(default_factory=dict)
 
 
 @dataclass
