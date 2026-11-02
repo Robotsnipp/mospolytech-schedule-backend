@@ -13,6 +13,7 @@
     lessons.py    Планирование: LessonEvent («что нужно запланировать») и
                   ScheduledClass («результат генерации: пара в слот/аудиторию»).
     generation.py Журнал запусков: GenerationRun, GenerationIssue.
+    dpo.py        Программы ДПО: DPOProgram, DPOMembership, DPODiscipline.
 
 Правила для этого слоя:
 - только данные и инварианты (clean/__str__/свойства);
@@ -22,6 +23,7 @@
 
 from .calendar import Module, Semester, TimeSlot, WeekPattern
 from .curriculum import Curriculum, CurriculumEntry, StudyForm
+from .dpo import DPODiscipline, DPOMembership, DPOProgram
 from .fixed_pd import FixedProjectSession
 from .generation import GenerationIssue, GenerationRun
 from .imported_schedule import ImportedGroupSchedule, ImportedLesson, ScheduleImport
@@ -36,6 +38,7 @@ from .semester_generation import SemesterGeneration, SemesterGenerationModule
 __all__ = [
     "ImportedGroupSchedule", "ImportedLesson", "ScheduleImport",
     "FixedProjectSession",
+    "DPODiscipline", "DPOMembership", "DPOProgram",
     "Module", "Curriculum", "CurriculumEntry", "StudyForm", "Location", "Building",
     "ManualPlacement", "ManualScheduleVariant",
     "PEDirection", "PEEnrollment", "PESlot",

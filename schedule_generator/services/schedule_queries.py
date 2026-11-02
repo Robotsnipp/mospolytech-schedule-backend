@@ -21,7 +21,9 @@ def resolve_run(semester, module=None, run_id=None):
     runs = runs.filter(module=module) if module is not None else runs.filter(module__isnull=True)
     if run_id is not None:
         return runs.filter(pk=run_id).first()
-    return runs.filter(status__in=SUCCESSFUL_STATUSES).order_by("-created_at").first()
+    # Запуски ДПО дополняют основное расписание и открываются только по run_id.
+    return (runs.filter(status__in=SUCCESSFUL_STATUSES, dpo_program__isnull=True)
+            .order_by("-created_at").first())
 
 
 def scheduled_classes_for(semester, holder_filter, module=None, run_id=None,
@@ -48,8 +50,10 @@ def group_holder_filter(group_id: int) -> Q:
 
 
 def student_holder_filter(student) -> Q:
-    """Пары студента: пары его группы, лекции её потоков и ПД по выбранному проекту."""
+    """Пары студента: пары его группы, лекции её потоков, ПД по выбранному проекту
+    и занятия групп ДПО, в которые он входит (видны в запуске программы ДПО)."""
     holder_filter = group_holder_filter(student.group_id)
+    holder_filter |= Q(event__group__dpo_memberships__student=student)
     project_choice = getattr(student, "project_choice", None)
     if project_choice is not None:
         holder_filter |= Q(event__project_id=project_choice.project_id)

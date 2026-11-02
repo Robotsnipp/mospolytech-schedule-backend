@@ -11,7 +11,8 @@ services/fixed_pd.py.
 - PD       — носитель project: блокируются только студенты, выбравшие проект
              (остальные студенты их учебных групп свободны в этот слот);
 - DPO      — носитель group (группа ДПО создаётся отдельно для каждого ДПО):
-             блокируется группа ДПО; формат очный/онлайн задаётся данными;
+             блокируется группа ДПО и лично каждый слушатель из основного
+             обучения (DPOMembership); формат очный/онлайн задаётся данными;
 - остальные— носитель group: блокируется одна учебная группа.
 Физкультура (PE) исключается из генерации полностью (NON_GENERATED_LESSON_TYPES).
 """
@@ -78,6 +79,16 @@ def build_event_specs(events) -> tuple[list[EventSpec], list[tuple]]:
             # всю группу-носителя (для ДПО это отдельная группа обучающихся).
             blocking_group_ids = {event.group_id}
             audience_size = event.audience_size or event.group.students.count()
+            if event.group.is_dpo:
+                # Слушатели ДПО из основного обучения: блокируем каждого лично,
+                # как в ПД. Пара ДПО конфликтует с парами их учебных групп и
+                # потоков, но остальные студенты этих групп свободны.
+                members = list(event.group.dpo_memberships
+                               .values_list("student_id", "student__group_id"))
+                blocking_student_ids = {student_id for student_id, _ in members}
+                participant_group_ids = {group_id for _, group_id in members}
+                audience_size = event.audience_size or (
+                    len(blocking_student_ids) + event.group.students.count())
         else:
             skipped.append((event, "У занятия нет носителя (группы/потока/проекта)."))
             continue

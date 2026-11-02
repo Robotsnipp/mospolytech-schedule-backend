@@ -11,6 +11,9 @@
 - просмотр расписания: schedule/groups|streams|teachers|students;
 - schedule/common-free-slots, schedule/free-rooms — общие окна студентов и
   свободные аудитории; runs/<id>/wellbeing — усталость и окна запуска;
+- dpo-programs, dpo-disciplines, dpo-memberships — программы ДПО;
+  POST dpo-programs/<id>/plan/ — планирование программы поверх основного
+  расписания (services/dpo.py);
 - POST /api/schedule/replan/ — минимальная перестройка после сбоя;
 - POST /api/schedule/generate/ — запуск решателя (action viewset'а
   GenerateViewSet; url_path="generate" даёт ровно "/generate/", без повтора
@@ -20,6 +23,7 @@
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
+from .api.dpo import DPODisciplineViewSet, DPOMembershipViewSet, DPOProgramViewSet
 from .api.generation_history import generation_history, generation_history_detail
 from .api.generation_options import generation_options
 from .api.imported import ImportedTeacherViewSet
@@ -59,6 +63,9 @@ from .api.views import (
 
 router = DefaultRouter()
 router.register("imported/teachers", ImportedTeacherViewSet, basename="imported-teacher")
+router.register("dpo-programs", DPOProgramViewSet, basename="dpo-program")
+router.register("dpo-disciplines", DPODisciplineViewSet, basename="dpo-discipline")
+router.register("dpo-memberships", DPOMembershipViewSet, basename="dpo-membership")
 
 # --- Справочники (CRUD) -----------------------------------------------------
 router.register("semesters", SemesterViewSet, basename="semester")

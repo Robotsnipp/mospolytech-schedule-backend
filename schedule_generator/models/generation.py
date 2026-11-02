@@ -29,6 +29,11 @@ class GenerationRun(models.Model):
     settings_snapshot = models.JSONField("Настройки запуска", default=dict, blank=True)
     input_snapshot = models.JSONField("Входы планирования", default=dict, blank=True)
     validation_snapshot = models.JSONField("Проверка результата", default=dict, blank=True)
+    # Запуск планирования программы ДПО поверх основного расписания. Такие
+    # запуски не выбираются «по умолчанию» и не стираются основной генерацией.
+    dpo_program = models.ForeignKey("schedule_generator.DPOProgram", on_delete=models.CASCADE,
+                                    null=True, blank=True, related_name="runs",
+                                    verbose_name="Программа ДПО")
 
     class Meta:
         verbose_name = "Запуск генерации"
