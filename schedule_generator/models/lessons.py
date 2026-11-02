@@ -134,7 +134,7 @@ class ScheduledClass(models.Model):
 
     event = models.ForeignKey(LessonEvent, on_delete=models.CASCADE, related_name="classes",
                               verbose_name="Занятие")
-    slot = models.ForeignKey("schedule_generator.TimeSlot", on_delete=models.CASCADE,
+    slot = models.ForeignKey("schedule_generator.TimeSlot", on_delete=models.PROTECT,
                              related_name="classes", verbose_name="Слот")
     room = models.ForeignKey("schedule_generator.Room", on_delete=models.SET_NULL,
                              null=True, blank=True,

@@ -19,7 +19,9 @@ def occurrence_dates(session, semester, module, week_pattern):
     start = semester.start_date
     end = start + timedelta(weeks=semester.weeks_count) - timedelta(days=1)
     if module:
-        start, end = max(start, module.start_date), min(end, module.end_date)
+        # A module has explicit calendar bounds. Teaching-week duration alone
+        # does not establish a calendar semester end (holidays may extend it).
+        start, end = max(start, module.start_date), module.end_date
     dates = set()
     for offset in range(max(0, (end - start).days + 1)):
         day = start + timedelta(days=offset)

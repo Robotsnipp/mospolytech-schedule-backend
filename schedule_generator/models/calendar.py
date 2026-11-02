@@ -40,6 +40,7 @@ class WeekPattern(models.Model):
         choices=[(0, "Любая"), (1, "Нечётная"), (2, "Чётная")],
         default=0,
     )
+    bell_schedule = models.JSONField("Источник сетки звонков", default=dict, blank=True)
 
     class Meta:
         verbose_name = "Шаблон недели"
@@ -55,7 +56,7 @@ class TimeSlot(models.Model):
 
     DAY_CHOICES = [
         (0, "Понедельник"), (1, "Вторник"), (2, "Среда"),
-        (3, "Четверг"), (4, "Пятница"), (5, "Суббота"),
+        (3, "Четверг"), (4, "Пятница"), (5, "Суббота"), (6, "Воскресенье"),
     ]
 
     week_pattern = models.ForeignKey(WeekPattern, on_delete=models.CASCADE, related_name="slots")
@@ -72,6 +73,24 @@ class TimeSlot(models.Model):
 
     def __str__(self):
         return f"{self.get_day_of_week_display()} {self.lesson_number}-я пара"
+
+    def save(self, *args, **kwargs):
+        self.validate_history()
+        return super().save(*args, **kwargs)
+
+    def validate_history(self):
+        if self.pk:
+            fields = ("week_pattern_id", "day_of_week", "lesson_number", "start_time", "end_time")
+            previous = type(self).objects.filter(pk=self.pk).values(*fields).first()
+            if previous and any(previous[field] != getattr(self, field) for field in fields) \
+                    and self.classes.exists():
+                raise ValidationError("Слот сохранённого расписания менять нельзя: создайте новый шаблон.")
+
+    def clean(self):
+        super().clean()
+        self.validate_history()
+        if self.start_time and self.end_time and self.end_time <= self.start_time:
+            raise ValidationError({"end_time": "Конец должен быть позже начала."})
 
 
 class Module(models.Model):

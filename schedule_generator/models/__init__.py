@@ -26,15 +26,18 @@ from .fixed_pd import FixedProjectSession
 from .generation import GenerationIssue, GenerationRun
 from .imported_schedule import ImportedGroupSchedule, ImportedLesson, ScheduleImport
 from .lessons import LessonEvent, ScheduledClass
+from .manual import ManualPlacement, ManualScheduleVariant
 from .pe import PEDirection, PEEnrollment, PESlot
 from .people import Group, Student, Teacher
 from .projects import Project, ProjectEnrollment
-from .resources import Building, LectureStream, Location, Room, Subject
+from .resources import Building, LectureStream, Location, ResourceProfile, Room, Subject
+from .semester_generation import SemesterGeneration, SemesterGenerationModule
 
 __all__ = [
     "ImportedGroupSchedule", "ImportedLesson", "ScheduleImport",
     "FixedProjectSession",
     "Module", "Curriculum", "CurriculumEntry", "StudyForm", "Location", "Building",
+    "ManualPlacement", "ManualScheduleVariant",
     "PEDirection", "PEEnrollment", "PESlot",
     "GenerationIssue",
     "GenerationRun",
@@ -44,8 +47,10 @@ __all__ = [
     "Project",
     "ProjectEnrollment",
     "Room",
+    "ResourceProfile",
     "ScheduledClass",
     "Semester",
+    "SemesterGeneration", "SemesterGenerationModule",
     "Student",
     "Subject",
     "Teacher",

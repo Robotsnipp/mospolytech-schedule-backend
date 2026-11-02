@@ -1,0 +1,351 @@
+{
+  "notice": "Макет · полностью условное расписание и назначения ПД, не реальный запуск. Реальные обозначения аудиторий используются с тестовой вместимостью.",
+  "group": "251-3210 · демо",
+  "student_count": 30,
+  "ordinary_class_count": 14,
+  "profiles": [
+    {
+      "id": "A",
+      "students": 15,
+      "pd_id": "pd-A"
+    },
+    {
+      "id": "B",
+      "students": 15,
+      "pd_id": "pd-B"
+    }
+  ],
+  "bell_times": [
+    {
+      "pair": 1,
+      "start": "09:00",
+      "end": "10:30"
+    },
+    {
+      "pair": 2,
+      "start": "10:40",
+      "end": "12:10"
+    },
+    {
+      "pair": 3,
+      "start": "12:20",
+      "end": "13:50"
+    },
+    {
+      "pair": 4,
+      "start": "14:30",
+      "end": "16:00"
+    },
+    {
+      "pair": 5,
+      "start": "16:10",
+      "end": "17:40"
+    },
+    {
+      "pair": 6,
+      "start": "17:50",
+      "end": "19:20"
+    },
+    {
+      "pair": 7,
+      "start": "19:30",
+      "end": "21:00"
+    }
+  ],
+  "classes": [
+    {
+      "id": "lesson-1",
+      "day": "mon",
+      "pair": 2,
+      "start": "10:40",
+      "end": "12:10",
+      "title": "Математический анализ",
+      "kind": "lecture",
+      "format": "ONLINE",
+      "room": null
+    },
+    {
+      "id": "lesson-2",
+      "day": "mon",
+      "pair": 3,
+      "start": "12:20",
+      "end": "13:50",
+      "title": "Основы программирования",
+      "kind": "practice",
+      "format": "ONSITE",
+      "room": "Пр2609"
+    },
+    {
+      "id": "lesson-3",
+      "day": "tue",
+      "pair": 2,
+      "start": "10:40",
+      "end": "12:10",
+      "title": "Основы программирования",
+      "kind": "lecture",
+      "format": "ONLINE",
+      "room": null
+    },
+    {
+      "id": "lesson-4",
+      "day": "tue",
+      "pair": 3,
+      "start": "12:20",
+      "end": "13:50",
+      "title": "Основы программирования",
+      "kind": "lab",
+      "format": "ONSITE",
+      "room": "Пр2806"
+    },
+    {
+      "id": "lesson-5",
+      "day": "tue",
+      "pair": 4,
+      "start": "14:30",
+      "end": "16:00",
+      "title": "Базы данных",
+      "kind": "lab",
+      "format": "ONSITE",
+      "room": "Пр2806"
+    },
+    {
+      "id": "lesson-6",
+      "day": "wed",
+      "pair": 2,
+      "start": "10:40",
+      "end": "12:10",
+      "title": "История России",
+      "kind": "lecture",
+      "format": "ONLINE",
+      "room": null
+    },
+    {
+      "id": "lesson-7",
+      "day": "wed",
+      "pair": 3,
+      "start": "12:20",
+      "end": "13:50",
+      "title": "Дискретная математика",
+      "kind": "practice",
+      "format": "ONSITE",
+      "room": "Пр2609"
+    },
+    {
+      "id": "lesson-8",
+      "day": "thu",
+      "pair": 1,
+      "start": "09:00",
+      "end": "10:30",
+      "title": "Базы данных",
+      "kind": "lecture",
+      "format": "ONLINE",
+      "room": null
+    },
+    {
+      "id": "lesson-9",
+      "day": "thu",
+      "pair": 2,
+      "start": "10:40",
+      "end": "12:10",
+      "title": "Компьютерные сети",
+      "kind": "lab",
+      "format": "ONSITE",
+      "room": "Пр2806"
+    },
+    {
+      "id": "lesson-10",
+      "day": "thu",
+      "pair": 3,
+      "start": "12:20",
+      "end": "13:50",
+      "title": "Физика",
+      "kind": "lab",
+      "format": "ONSITE",
+      "room": "Пр2609"
+    },
+    {
+      "id": "lesson-11",
+      "day": "thu",
+      "pair": 4,
+      "start": "14:30",
+      "end": "16:00",
+      "title": "Иностранный язык",
+      "kind": "practice",
+      "format": "ONSITE",
+      "room": "Пр2609"
+    },
+    {
+      "id": "lesson-12",
+      "day": "fri",
+      "pair": 2,
+      "start": "10:40",
+      "end": "12:10",
+      "title": "Физика",
+      "kind": "lecture",
+      "format": "ONLINE",
+      "room": null
+    },
+    {
+      "id": "lesson-13",
+      "day": "fri",
+      "pair": 3,
+      "start": "12:20",
+      "end": "13:50",
+      "title": "Математический анализ",
+      "kind": "lecture",
+      "format": "ONLINE",
+      "room": null
+    },
+    {
+      "id": "lesson-14",
+      "day": "fri",
+      "pair": 4,
+      "start": "14:30",
+      "end": "16:00",
+      "title": "Математический анализ",
+      "kind": "practice",
+      "format": "ONSITE",
+      "room": "Пр2609"
+    }
+  ],
+  "fixed_pd": [
+    {
+      "id": "pd-A",
+      "day": "mon",
+      "start": "14:30",
+      "end": "17:40",
+      "title": "ПД · Цифровая лаборатория",
+      "participants": 15,
+      "attendance_profile": "A",
+      "fixed": true,
+      "covered_pairs": [
+        4,
+        5
+      ]
+    },
+    {
+      "id": "pd-B",
+      "day": "wed",
+      "start": "14:30",
+      "end": "17:40",
+      "title": "ПД · Инженерный проект",
+      "participants": 15,
+      "attendance_profile": "B",
+      "fixed": true,
+      "covered_pairs": [
+        4,
+        5
+      ]
+    }
+  ],
+  "rooms": [
+    {
+      "name": "Пр1315",
+      "building": 1,
+      "floor": 3,
+      "demo_capacity": 20
+    },
+    {
+      "name": "Пр1316",
+      "building": 1,
+      "floor": 3,
+      "demo_capacity": 30
+    },
+    {
+      "name": "Пр2608",
+      "building": 2,
+      "floor": 6,
+      "demo_capacity": 24
+    },
+    {
+      "name": "Пр2609",
+      "building": 2,
+      "floor": 6,
+      "demo_capacity": 30
+    },
+    {
+      "name": "Пр2806",
+      "building": 2,
+      "floor": 8,
+      "demo_capacity": 30
+    }
+  ],
+  "applied_profile_example": {
+    "max_daily_pairs": {
+      "value": 4,
+      "mode": "required"
+    },
+    "max_gap_minutes": {
+      "value": 60,
+      "mode": "preferred"
+    },
+    "latest_end": {
+      "value": "17:40",
+      "mode": "preferred"
+    },
+    "preferred_building": {
+      "value": 2,
+      "mode": "preferred"
+    },
+    "additional_four": "OFF"
+  },
+  "initial_metrics": {
+    "ordinary_placed": "14/14",
+    "fixed_pd_blocks": 2,
+    "max_personal_pairs": 4,
+    "onsite_ordinary_classes": 8,
+    "note": "Группе показаны 2 проекта, у каждого студента только один. У каждого профиля максимальный промежуток 40 мин; предупреждение 140 мин возникает только после показанного переноса.",
+    "max_personal_gap_minutes": 40,
+    "gap_over_60_count": 0,
+    "preferred_building_deviations": 0
+  },
+  "manual_move_example": {
+    "class_id": "lesson-14",
+    "from_slot": "fri/4",
+    "to_slot": "fri/5",
+    "target_start": "16:10",
+    "target_end": "17:40",
+    "original_room": "Пр2609",
+    "background_demo_reservation": {
+      "room": "Пр2609",
+      "day": "fri",
+      "start": "16:10",
+      "end": "17:40",
+      "notice": "Условная внешняя занятость только для демонстрации конфликта комнаты; это не данные реального расписания."
+    },
+    "room_candidates": [
+      {
+        "room": "Пр2806",
+        "demo_capacity": 30,
+        "eligible": true
+      },
+      {
+        "room": "Пр2608",
+        "demo_capacity": 24,
+        "eligible": false,
+        "reason": "24 места для 30 студентов"
+      },
+      {
+        "room": "Пр1316",
+        "demo_capacity": 30,
+        "eligible": true,
+        "notice": "Другой корпус — отступление от пожелания"
+      }
+    ],
+    "warnings": [
+      "Перерыв в пятницу увеличился с 40 до 140 минут; лимит 60 минут задан как пожелание.",
+      "Исходная аудитория занята: выбрать замену или Пока без аудитории."
+    ],
+    "saved_without_room": {
+      "ordinary_placed": "14/14",
+      "unassigned_onsite_rooms": 1,
+      "room_label": "Нужно назначить аудиторию",
+      "warning": "Окно 140 мин вместо желаемых 60 мин"
+    }
+  },
+  "swap_example": {
+    "first": "lesson-2",
+    "second": "lesson-14",
+    "notice": "Обмен двух обычных пар между mon/3 и fri/4. У обеих Пр2609; остальные позиции и фиксированная ПД не меняются."
+  }
+}

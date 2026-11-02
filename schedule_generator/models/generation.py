@@ -11,6 +11,7 @@ class GenerationRun(models.Model):
         ("SOLVED", "Решено"),
         ("PARTIAL", "Частично"),
         ("INFEASIBLE", "Неразрешимо"),
+        ("UNKNOWN", "Решение не найдено за время поиска"),
         ("ERROR", "Ошибка"),
     ]
 
@@ -19,10 +20,15 @@ class GenerationRun(models.Model):
     module = models.ForeignKey("schedule_generator.Module", on_delete=models.PROTECT, null=True, blank=True, related_name="runs")
     created_at = models.DateTimeField("Создан", auto_now_add=True)
     status = models.CharField("Статус", max_length=20, choices=STATUS_CHOICES, default="PENDING")
-    objective_value = models.IntegerField("Значение целевой функции", null=True, blank=True)
+    objective_value = models.BigIntegerField("Значение целевой функции", null=True, blank=True)
     solve_time_seconds = models.FloatField("Время решения (сек)", null=True, blank=True)
     message = models.TextField("Сообщение", blank=True)
+    solver_diagnostics = models.JSONField("Качество поиска решателя", default=dict, blank=True)
     fixed_pd_snapshot = models.JSONField("Учтённые фиксированные занятия ПД", default=list, blank=True)
+
+    settings_snapshot = models.JSONField("Настройки запуска", default=dict, blank=True)
+    input_snapshot = models.JSONField("Входы планирования", default=dict, blank=True)
+    validation_snapshot = models.JSONField("Проверка результата", default=dict, blank=True)
 
     class Meta:
         verbose_name = "Запуск генерации"

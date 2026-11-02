@@ -1,6 +1,5 @@
 from copy import deepcopy
 from datetime import date, time
-from unittest.mock import patch
 
 from django.core.exceptions import ValidationError
 from django.test import TestCase
@@ -31,13 +30,6 @@ from schedule_generator.services.pd_import import PDImportError, import_fixed_pd
 
 class FixedPDTests(TestCase):
     def setUp(self):
-        # Проверяем интервалы и конфликты независимо от общего резервирования
-        # пн/ср под ПД: оно иначе маскирует ошибку блокировок обычных пар.
-        # Сам CP-SAT и остальные ограничения работают без подмены.
-        self.day_rules = patch("schedule_generator.services.event_specs.allowed_days_for",
-                               return_value=frozenset(range(6)))
-        self.day_rules.start()
-        self.addCleanup(self.day_rules.stop)
         self.semester = Semester.objects.create(name="2026 autumn", start_date=date(2026, 9, 1))
         self.module = Module.objects.create(semester=self.semester, number=1,
             start_date=date(2026, 9, 1), end_date=date(2026, 10, 31), teaching_weeks=9)
@@ -108,8 +100,7 @@ class FixedPDTests(TestCase):
         self.assertEqual((snapshot[0]["start"], snapshot[0]["end"], snapshot[0]["room_id"]), ("13:00", "16:00", None))
         self.assertEqual(snapshot[0]["student_ids"], [self.student.pk])
 
-    def test_default_day_rules_keep_monday_pd_and_place_regular_pair_on_tuesday(self):
-        self.day_rules.stop()
+    def test_personal_pd_load_can_prefer_tuesday_without_reserving_all_mondays(self):
         self.fixed()
         self.lesson()
         TimeSlot.objects.create(week_pattern=self.pattern, day_of_week=1,
