@@ -7,13 +7,20 @@ from django.db.models.functions import Coalesce
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_view
 from rest_framework import mixins, status, viewsets
-from rest_framework.decorators import action
+from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAdminUser
 from rest_framework.response import Response
 
 from schedule_generator.api.permissions import IsAdminOrReadOnly
 
+from .free_periods import (
+    MAX_DAYS,
+    MAX_GROUPS,
+    FreePeriodsError,
+    find_free_periods,
+    resolve_groups,
+)
 from .importer import EventDataError, import_events
 from .models import Event
 from .serializers import (
@@ -100,3 +107,57 @@ class EventViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin,
         except EventDataError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(result)
+
+
+FREE_PERIODS_PARAMETERS = [
+    OpenApiParameter("groups", OpenApiTypes.STR, required=True,
+                     description=f"Названия групп через запятую (до {MAX_GROUPS}), например 231-333,231-334"),
+    OpenApiParameter("date_from", OpenApiTypes.DATE, required=True, description="Первый день поиска"),
+    OpenApiParameter("date_to", OpenApiTypes.DATE, required=True,
+                     description=f"Последний день поиска (диапазон до {MAX_DAYS} дней)"),
+    OpenApiParameter("min_free", OpenApiTypes.INT,
+                     description="Минимум свободных групп в периоде (по умолчанию 1)"),
+    OpenApiParameter("limit", OpenApiTypes.INT, description="Сколько периодов вернуть (1-200, по умолчанию 20)"),
+    OpenApiParameter("include_sunday", OpenApiTypes.BOOL, description="Учитывать воскресенья (1)"),
+]
+
+
+def _int_param(params, name, default):
+    value = params.get(name)
+    if value in (None, ""):
+        return default
+    try:
+        return int(value)
+    except ValueError as exc:
+        raise ValidationError({name: "Ожидается число."}) from exc
+
+
+@extend_schema(summary="Самые свободные периоды для набора групп", tags=["Мероприятия"],
+               parameters=FREE_PERIODS_PARAMETERS, responses={200: OpenApiTypes.OBJECT})
+@api_view(["GET"])
+@permission_classes([])
+def free_periods(request):
+    """Когда больше всего выбранных групп свободны - для планирования мероприятия.
+
+    Занятость - реальное расписание rasp.dmami.ru. Соседние пары одного дня с
+    одинаковым набором занятых групп склеиваются в один период.
+    """
+    params = request.query_params
+    date_from = _date_param(params, "date_from")
+    date_to = _date_param(params, "date_to")
+    if date_from is None or date_to is None:
+        raise ValidationError({"detail": "Нужны date_from и date_to в формате ГГГГ-ММ-ДД."})
+    min_free = _int_param(params, "min_free", 1)
+    limit = _int_param(params, "limit", 20)
+    include_sunday = params.get("include_sunday") in ("1", "true", "True")
+    try:
+        groups = resolve_groups(params.get("groups", "").split(","))
+        periods = find_free_periods(groups, date_from, date_to, include_sunday=include_sunday,
+                                    min_free=min_free, limit=limit)
+    except FreePeriodsError as exc:
+        return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+    return Response({
+        "groups": [g.title for g in groups],
+        "date_from": date_from, "date_to": date_to,
+        "periods": [p.as_dict() for p in periods],
+    })
