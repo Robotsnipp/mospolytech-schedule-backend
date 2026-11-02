@@ -2,8 +2,9 @@
 
 import json
 import re
-from datetime import UTC, date, datetime, time
+from datetime import UTC, datetime, time
 from pathlib import Path
+from unittest.mock import patch
 
 from django.db.models import Q
 from django.test import TestCase
@@ -74,6 +75,12 @@ class GroupCalendarApiTests(TestCase):
         payload = json.loads((FIX / "231-333_session0.json").read_text(encoding="utf-8"))
         store_group("231-333", True, parse_response(payload), 0)
 
+    def setUp(self):
+        # The imported fixture is a historical snapshot, independent of today.
+        self.export_now = datetime(2026, 9, 1, tzinfo=UTC)
+        clock = self.enterContext(patch("rasp.calendar.datetime", wraps=datetime))
+        clock.now.return_value = self.export_now
+
     def calendar_text(self, query: str = "") -> str:
         response = self.client.get(f"/api/rasp/groups/231-333/calendar/{query}")
         self.assertEqual(response.status_code, 200)
@@ -89,7 +96,7 @@ class GroupCalendarApiTests(TestCase):
         self.assertTrue(text.startswith("BEGIN:VCALENDAR\r\n"))
         self.assertIn("X-WR-CALNAME:Расписание 231-333", text)
         active = (Lesson.objects.filter(is_session=False)
-                  .filter(Q(date_to__isnull=True) | Q(date_to__gte=date.today())).count())
+                  .filter(Q(date_to__isnull=True) | Q(date_to__gte=self.export_now.date())).count())
         self.assertEqual(len(parse_ics(text)), active)
 
     def test_event_fields_match_lesson(self):
