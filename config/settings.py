@@ -53,6 +53,7 @@ INSTALLED_APPS = [
     'django_extensions',
     'schedule_generator',
     'rasp',
+    'events',
 ]
 
 # Dev-панель проверки подключается ТОЛЬКО в режиме разработки (DEBUG=True).
