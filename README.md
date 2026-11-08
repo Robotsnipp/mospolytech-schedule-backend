@@ -265,6 +265,7 @@ ID условные. Последний маршрут возвращает св
 SECRET_KEY=local-test-only DB_ENGINE=sqlite python manage.py migrate
 SECRET_KEY=local-test-only DB_ENGINE=sqlite python manage.py test schedule_generator
 SECRET_KEY=local-test-only DB_ENGINE=sqlite python manage.py import_rasp --groups 231-333
+SECRET_KEY=local-test-only DB_ENGINE=sqlite python manage.py test events
 ```
 
 Тесты проверяют импорт плана и подготовку часов, реальный решатель, фильтрацию
@@ -472,3 +473,16 @@ python manage.py import_pd --refresh    # скачать таблицу зано
 переносы и разовые занятия из таблицы сохраняются текстом в `note`. Эндпоинты: `GET /api/rasp/pd/directions/`,
 `pd/projects/?direction=&q=`, `GET|POST pd/enrollments/` (`owner`, `group_title`, `project`; выбор заменяет прежний),
 `DELETE pd/enrollments/<id>/?owner=`. Конфликты проверяются с парами группы и физкультурой.
+
+## Мероприятия (приложение `events`)
+Каталог мероприятий со свободным посещением: события вуза (`scope=university`) и города (`scope=city`).
+Данные за 2025 год собраны вручную в `data/events/events_2025.json`. Импорт идемпотентен: запись
+ищется по `url` + `title` + `date_start`, повторный запуск обновляет поля и не создаёт дублей.
+
+```sh
+python manage.py import_events data/events/events_2025.json   # «Создано / обновлено / пропущено»
+```
+Эндпоинты: `GET /api/events/?scope=&access=&year=&date_from=&date_to=&q=` (только опубликованные,
+сортировка по `date_start`, а без неё по `announced_at`), `GET /api/events/<id>/`; только администраторам:
+`POST /api/events/` и `POST /api/events/import/` (тело — содержимое JSON-файла). В админке
+есть фильтры по масштабу, доступу и году и поиск по названию. Подробнее: `docs/FEATURES.md`.
