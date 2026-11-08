@@ -19,6 +19,9 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
+from types import SimpleNamespace
+
 from django.core.exceptions import ValidationError
 from django.db import transaction
 
@@ -34,6 +37,7 @@ from ..models import (
 )
 from ..models.dpo import ACADEMIC_HOURS_PER_PAIR
 from .dto import FixedPDSpec, RunOutcome
+from .fixed_pd import occurrence_dates
 from .generation import GenerationError, run_generation
 from .schedule_queries import SUCCESSFUL_STATUSES, resolve_run
 
@@ -133,16 +137,29 @@ def resolve_base_run(program: DPOProgram) -> GenerationRun | None:
     return resolve_run(program.semester, program.module)
 
 
+def _period_bounds(semester, module):
+    if module is not None:
+        return max(semester.start_date, module.start_date), module.end_date
+    return semester.start_date, semester.start_date + timedelta(weeks=semester.weeks_count) - timedelta(days=1)
+
+
 def _other_program_runs(program: DPOProgram) -> list[GenerationRun]:
-    """Последний успешный запуск каждой другой программы этого же периода."""
+    """Последний успешный запуск других программ с пересекающимися периодами."""
     runs = (GenerationRun.objects
-            .filter(semester=program.semester, module=program.module,
+            .filter(semester=program.semester,
                     status__in=SUCCESSFUL_STATUSES, dpo_program__isnull=False)
+            .select_related("module")
             .exclude(dpo_program=program).order_by("dpo_program_id", "-created_at", "-pk"))
     latest = {}
     for run in runs:
         latest.setdefault(run.dpo_program_id, run)
-    return list(latest.values())
+    start, end = _period_bounds(program.semester, program.module)
+    overlapping = []
+    for run in latest.values():
+        run_start, run_end = _period_bounds(program.semester, run.module)
+        if run_start <= end and start <= run_end:
+            overlapping.append(run)
+    return overlapping
 
 
 def _class_people(event, members_by_dpo_group, students_by_group, students_by_project):
@@ -162,11 +179,16 @@ def _class_people(event, members_by_dpo_group, students_by_group, students_by_pr
     return students, group_ids
 
 
-def load_background_busy(runs, week_pattern) -> tuple[list[FixedPDSpec], list[dict]]:
-    """Пары запусков как неподвижная занятость шаблона недели ``week_pattern``."""
+def load_background_busy(runs, week_pattern, *, module=None) -> tuple[list[FixedPDSpec], list[dict]]:
+    """Буквальные интервалы запусков на общих датах периода и шаблона цели.
+
+    Разные сетки могут описывать одно время; чётность и границы модулей
+    определяют, встречаются ли такие занятия на одной календарной дате.
+    """
     classes = list(ScheduledClass.objects
-                   .filter(run__in=runs, slot__week_pattern=week_pattern)
-                   .select_related("slot", "event", "event__stream", "event__project")
+                   .filter(run__in=runs)
+                   .select_related("run__module", "run__semester", "slot__week_pattern",
+                                   "event", "event__stream", "event__project")
                    .prefetch_related("event__stream__groups"))
     group_ids = set()
     for scheduled in classes:
@@ -190,6 +212,11 @@ def load_background_busy(runs, week_pattern) -> tuple[list[FixedPDSpec], list[di
     busy, summary = [], []
     for scheduled in classes:
         slot = scheduled.slot
+        session = SimpleNamespace(day_of_week=slot.day_of_week, date=None)
+        dates = (occurrence_dates(session, scheduled.run.semester, scheduled.run.module, slot.week_pattern)
+                 & occurrence_dates(session, week_pattern.semester, module, week_pattern))
+        if not dates:
+            continue
         if slot.start_time is None or slot.end_time is None:
             raise DPOPlanningError("У слотов основного расписания нет времени начала и конца.")
         students, groups = _class_people(scheduled.event, members_by_dpo_group,
@@ -202,7 +229,7 @@ def load_background_busy(runs, week_pattern) -> tuple[list[FixedPDSpec], list[di
             start_minute=_minute(slot.start_time), end_minute=_minute(slot.end_time),
             teacher_id=teacher_id, student_ids=frozenset(students),
             participant_group_ids=frozenset(groups), room_id=scheduled.room_id,
-            place_raw="", travel_buffer_minutes=0, occurrence_dates=frozenset(),
+            place_raw="", travel_buffer_minutes=0, occurrence_dates=dates,
         ))
         summary.append({"run_id": scheduled.run_id, "class_id": scheduled.pk, "slot_id": slot.pk})
     return busy, summary
@@ -225,7 +252,7 @@ def plan_program(program: DPOProgram, *, time_limit_seconds: int = 30, seed: int
     base_run = resolve_base_run(program)
     week_pattern = _week_pattern_for(program, base_run)
     runs = ([base_run] if base_run else []) + _other_program_runs(program)
-    busy, summary = load_background_busy(runs, week_pattern)
+    busy, summary = load_background_busy(runs, week_pattern, module=program.module)
     try:
         outcome: RunOutcome = run_generation(
             semester=program.semester, module=program.module, week_pattern=week_pattern,

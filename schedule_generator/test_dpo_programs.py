@@ -27,6 +27,8 @@ from schedule_generator.models import (
 from schedule_generator.services.config import SolverConfig
 from schedule_generator.services.dpo import (
     DPOPlanningError,
+    _other_program_runs,
+    load_background_busy,
     plan_program,
     prepare_program_load,
 )
@@ -195,6 +197,100 @@ class PlanningTests(DPOScenario):
         self.assertEqual(classes.count(), 1)
         self.assertFalse(scheduled_classes_for(self.semester, student_holder_filter(self.vera),
                                                module=self.module, run_id=result["run_id"]).exists())
+
+
+class CrossProgramCalendarTests(DPOScenario):
+    slots_count = 1
+
+    def other_program(self, module, **values):
+        group = Group.objects.create(name="ДПО-Other", is_dpo=True)
+        DPOMembership.objects.create(group=group, student=self.anna)
+        program = DPOProgram.objects.create(name="Other", semester=self.semester,
+                                            module=module, **values)
+        program.groups.add(group)
+        DPODiscipline.objects.create(program=program, subject=self.math,
+                                     teacher=self.dpo_teacher, format=Format.ONLINE, total_pairs=4)
+        return program
+
+    def assert_blocked(self, program):
+        result = plan_program(program, time_limit_seconds=5)
+        self.assertNotEqual(result["status"], "SOLVED")
+        self.assertEqual(result["scheduled_count"], 0)
+
+    def test_semester_program_blocks_module_program(self):
+        self.program.module = None
+        self.program.weeks = 4
+        self.program.save()
+        self.discipline(format=Format.ONLINE)
+        self.assertEqual(self.plan()["status"], "SOLVED")
+        self.assert_blocked(self.other_program(self.module))
+
+    def test_module_program_blocks_semester_program(self):
+        self.discipline(format=Format.ONLINE)
+        first = self.plan()
+        self.assertEqual(first["status"], "SOLVED")
+        other = self.other_program(None, weeks=4)
+        # Общая генерация без модуля запрещена при наличии модульной нагрузки;
+        # проверяем обратное направление на входной границе фоновой занятости.
+        runs = _other_program_runs(other)
+        self.assertEqual([run.pk for run in runs], [first["run_id"]])
+        busy, _ = load_background_busy(runs, self.pattern)
+        self.assertEqual(len(busy), 1)
+        self.assertIn(self.anna.pk, busy[0].student_ids)
+
+    def test_overlapping_modules_block(self):
+        self.discipline(format=Format.ONLINE)
+        self.assertEqual(self.plan()["status"], "SOLVED")
+        module = Module.objects.create(semester=self.semester, number=2,
+                                       start_date=date(2026, 9, 15), end_date=date(2026, 10, 14),
+                                       teaching_weeks=4)
+        self.assert_blocked(self.other_program(module))
+
+    def test_disjoint_modules_can_reuse_the_same_time(self):
+        self.discipline(format=Format.ONLINE)
+        self.assertEqual(self.plan()["status"], "SOLVED")
+        module = Module.objects.create(semester=self.semester, number=2,
+                                       start_date=date(2026, 10, 1), end_date=date(2026, 10, 31),
+                                       teaching_weeks=4)
+        result = plan_program(self.other_program(module), time_limit_seconds=5)
+        self.assertEqual(result["status"], "SOLVED")
+        self.assertEqual(result["scheduled_count"], 1)
+
+    def test_overlapping_dates_without_a_shared_lesson_day_do_not_block(self):
+        self.discipline(format=Format.ONLINE)
+        self.assertEqual(self.plan()["status"], "SOLVED")
+        # Модули пересекаются только в среду, а обе программы учатся в понедельник.
+        module = Module.objects.create(semester=self.semester, number=2,
+                                       start_date=date(2026, 9, 30), end_date=date(2026, 10, 31),
+                                       teaching_weeks=4)
+        result = plan_program(self.other_program(module), time_limit_seconds=5)
+        self.assertEqual(result["status"], "SOLVED")
+        self.assertEqual(result["scheduled_count"], 1)
+
+    def alternate_grid_base(self, parity=0):
+        pattern = WeekPattern.objects.create(semester=self.semester, name="Alternate", parity=parity)
+        slot = TimeSlot.objects.create(week_pattern=pattern, day_of_week=0, lesson_number=1,
+                                        start_time=time(9), end_time=time(10, 30))
+        base = GenerationRun.objects.create(semester=self.semester, module=self.module, status="SOLVED")
+        ScheduledClass.objects.create(run=base, event=self.main_lesson(self.g2), slot=slot)
+        return base
+
+    def test_other_grid_same_time_blocks(self):
+        self.discipline(format=Format.ONLINE)
+        first = self.plan()
+        self.assertEqual(first["status"], "SOLVED")
+        other = self.other_program(self.module, base_run=self.alternate_grid_base())
+        self.assert_blocked(other)
+
+    def test_opposite_parity_grids_can_reuse_the_same_time(self):
+        self.pattern.parity = 1
+        self.pattern.save()
+        self.discipline(format=Format.ONLINE)
+        self.assertEqual(self.plan()["status"], "SOLVED")
+        other = self.other_program(self.module, base_run=self.alternate_grid_base(parity=2))
+        result = plan_program(other, time_limit_seconds=5)
+        self.assertEqual(result["status"], "SOLVED")
+        self.assertEqual(result["scheduled_count"], 1)
 
 
 class FixedBusyWithoutTeacherTests(DPOScenario):
