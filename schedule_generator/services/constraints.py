@@ -98,7 +98,10 @@ def add_fixed_pd_constraints(model, specs: list[EventSpec], fixed_pd: list[Fixed
             if not overlap and not travel_overlap:
                 continue
             for spec in specs:
-                shared_people = (spec.teacher_id == fixed.teacher_id
+                # Неподвижная занятость основного расписания может быть без
+                # преподавателя: «оба без преподавателя» - не общий человек.
+                shared_people = ((spec.teacher_id is not None
+                                  and spec.teacher_id == fixed.teacher_id)
                                  or bool(spec.blocking_student_ids & fixed.student_ids)
                                  or bool(spec.blocking_group_ids & fixed.participant_group_ids))
                 if overlap and shared_people:
