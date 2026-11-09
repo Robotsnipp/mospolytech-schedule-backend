@@ -15,6 +15,8 @@
   POST dpo-programs/<id>/plan/ — планирование программы поверх основного
   расписания (services/dpo.py);
 - POST /api/schedule/replan/ — минимальная перестройка после сбоя;
+- POST /api/schedule/replan/section/ — частичная перегенерация выбранного
+  участка расписания (services/replan.replan_section);
 - POST /api/schedule/generate/ — запуск решателя (action viewset'а
   GenerateViewSet; url_path="generate" даёт ровно "/generate/", без повтора
   сегмента — совместимость с прежним APIView-маршрутом).

@@ -61,7 +61,7 @@ from ..services.curriculum import (
     import_curriculum,
     prepare_module_load,
 )
-from ..services.replan import ReplanError, replan_after_disruption
+from ..services.replan import ReplanError, replan_after_disruption, replan_section
 from ..services.rooms import free_rooms, slot_at, university_now
 from ..services.run_report import build_wellbeing_report
 from ..services.schedule_read import (
@@ -98,6 +98,7 @@ from .serializers import (
     ProjectSerializer,
     ReplanRequestSerializer,
     ReplanResultSerializer,
+    ReplanSectionRequestSerializer,
     RoomSerializer,
     ScheduledClassSerializer,
     ScheduleFilterSerializer,
@@ -994,6 +995,37 @@ class ReplanViewSet(viewsets.ViewSet):
             outcome = replan_after_disruption(
                 run=data["run"], teacher=data.get("teacher"),
                 unavailable_days=data.get("unavailable_days"), room=data.get("room"),
+                time_limit_seconds=data["time_limit_seconds"], seed=data["seed"])
+        except ReplanError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(ReplanResultSerializer({
+            "run": outcome.run_id, "status": outcome.status,
+            "affected_count": outcome.affected_count,
+            "unchanged_count": outcome.unchanged_count,
+            "affected_students": outcome.affected_students,
+            "changes": outcome.changes,
+        }).data, status=status.HTTP_201_CREATED)
+
+    @extend_schema(
+        summary="Частичная перегенерация выбранного участка расписания",
+        description="Выбирается участок, который не нравится (занятия, дни недели, слоты "
+                    "или аудитории), и перегенерируется заново по-другому. Все пары вне "
+                    "участка жёстко остаются на своих местах. Возвращает новый запуск и "
+                    "список изменений; исходный запуск не меняется.",
+        tags=["Генерация"],
+        request=ReplanSectionRequestSerializer,
+        responses={status.HTTP_201_CREATED: ReplanResultSerializer},
+    )
+    @action(detail=False, methods=["post"], url_path="section")
+    def section(self, request):
+        serializer = ReplanSectionRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        try:
+            outcome = replan_section(
+                run=data["run"], events=set(data.get("events") or ()),
+                days=set(data.get("days") or ()), slots=set(data.get("slots") or ()),
+                rooms=set(data.get("rooms") or ()),
                 time_limit_seconds=data["time_limit_seconds"], seed=data["seed"])
         except ReplanError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)

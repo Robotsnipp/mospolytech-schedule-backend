@@ -39,7 +39,8 @@ Soft-ограничения (штрафы в целевой функции, см
 - хронотип преподавателя (жаворонок/сова);
 - режим подготовки к сессии: свободные дни у групп (PlanningPreferences).
 
-Перепланирование: ``pinned`` закрепляет уже стоящие пары бонусом, ``forbidden``
+Перепланирование: ``pinned`` закрепляет уже стоящие пары (мягко — бонусом,
+жёстко — при ``pin_hard=True`` это обязательное условие), ``forbidden``
 запрещает отдельные размещения (см. services/replan.py).
 
 Модель реализуема всегда: пара либо ставится, либо нет; недостающие пары
@@ -110,6 +111,7 @@ def generate_schedule(
     fixed_pd=(),
     preferences: PlanningPreferences | None = None,
     pinned: list[dict] | None = None,
+    pin_hard: bool = False,
     forbidden: set[tuple[int, int]] | None = None,
 ) -> GenerationResult:
     """Полный цикл решения: построить модель -> решить -> извлечь результат.
@@ -122,6 +124,8 @@ def generate_schedule(
     :param preferences: режимы мягких правил (например, свободные дни)
     :param pinned: пары {event_id, slot_id, room_id}, которые желательно не
         двигать (перепланирование); мягко, через бонус целевой функции
+    :param pin_hard: закреплять ``pinned`` как обязательное условие — пары
+        вне перегенерируемого участка не сдвигаются ни при каких обстоятельствах
     :param forbidden: размещения (event_id, slot_id), которые запрещены
     """
     solver_config = config or SolverConfig()
@@ -130,7 +134,7 @@ def generate_schedule(
     model, model_context = _build_model(
         slots=slots, rooms=rooms, specs=specs, teachers_by_id=teachers_by_id,
         fixed_pd=fixed_pd, preferences=preferences or PlanningPreferences(),
-        pinned=pinned or [], forbidden=forbidden or set())
+        pinned=pinned or [], pin_hard=pin_hard, forbidden=forbidden or set())
     if model_context is None:  # пустой шаблон недели — решать нечего
         return GenerationResult("INFEASIBLE", None, time.time() - start_time, [],
                                 [spec.event_id for spec in specs],
@@ -187,7 +191,7 @@ def generate_schedule(
 def _build_model(*, slots, rooms, specs: list[EventSpec],
                  teachers_by_id: dict[int, dict], fixed_pd=(),
                  preferences: PlanningPreferences,
-                 pinned: list[dict], forbidden: set[tuple[int, int]]):
+                 pinned: list[dict], pin_hard: bool, forbidden: set[tuple[int, int]]):
     """Собирает CpModel по частям (hard -> soft -> objective).
 
     Возвращает (model, model_context); model_context — переменные, нужные для
@@ -250,7 +254,12 @@ def _build_model(*, slots, rooms, specs: list[EventSpec],
     free_day_violation_vars = collect_free_day_penalties(
         model, specs, slot_ids, day_of_week_by_slot_id, pair_placement_vars,
         preferences.free_days_per_group)
-    pinned_vars = _pinned_vars(pinned, pair_placement_vars, onsite_room_choice_vars)
+    if pin_hard:
+        # Частичная перегенерация: всё вне участка — обязательное условие.
+        _pin_hard(model, pinned, pair_placement_vars, onsite_room_choice_vars)
+        pinned_vars = []
+    else:
+        pinned_vars = _pinned_vars(pinned, pair_placement_vars, onsite_room_choice_vars)
     teaching = collect_teaching_preferences(model=model, specs=specs, slots=slot_list,
                                             pair_placement_vars=pair_placement_vars)
     distribution = collect_daily_distribution_penalties(model, specs, slot_list, pair_placement_vars, fixed_pd)
@@ -283,6 +292,24 @@ def _build_model(*, slots, rooms, specs: list[EventSpec],
         "teaching_preferences": teaching,
         "daily_distribution_penalties": distribution,
     }
+
+
+def _pin_hard(model, pinned: list[dict], pair_placement_vars: dict,
+              onsite_room_choice_vars: dict) -> None:
+    """Жёсткое закрепление пар: размещение обязательно в своём слоте.
+
+    Для очной пары с известной аудиторией фиксируется и аудитория; если её нет
+    в текущем наборе (например, закрыта), фиксируется только слот. Пары,
+    которых нет в модели, пропускаются — они не участвуют в перестройке.
+    """
+    for assignment in pinned:
+        placement_key = (assignment["event_id"], assignment["slot_id"])
+        if placement_key not in pair_placement_vars:
+            continue
+        model.Add(pair_placement_vars[placement_key] == 1)
+        room_key = (*placement_key, assignment.get("room_id"))
+        if room_key in onsite_room_choice_vars:
+            model.Add(onsite_room_choice_vars[room_key] == 1)
 
 
 def _pinned_vars(pinned: list[dict], pair_placement_vars: dict,
