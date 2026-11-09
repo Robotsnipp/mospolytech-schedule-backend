@@ -1,10 +1,19 @@
-"""Самовосстановление расписания: минимальная перестройка после сбоя.
+"""Самовосстановление и частичная перегенерация расписания.
 
-Сбой — преподаватель недоступен в некоторые дни недели либо аудитория закрыта.
-Вместо полной перегенерации строится новый запуск, где все пары, которых сбой
-не касается, закреплены (мягко, через PIN_BONUS), а затронутые ищут новое место.
-Исходный запуск не меняется: результат — отдельный GenerationRun, который
-можно сравнить со старым.
+Два сценария минимальной перестройки вместо полной перегенерации:
+
+1. Сбой — преподаватель недоступен в некоторые дни недели либо аудитория
+   закрыта (`replan_after_disruption`). Затронутые пары ищут новое место,
+   остальные закреплены.
+
+2. Частичная перегенерация участка (`replan_section`) — пользователь выбирает
+   кусок расписания, который ему не нравится (занятия, дни недели, слоты или
+   аудитории), и только он решается заново; всё остальное зафиксировано на
+   своих местах.
+
+В обоих случаях строится новый запуск, где все пары вне выбранного участка
+закреплены жёстко, а исходный запуск не меняется: результат — отдельный
+GenerationRun, который можно сравнить со старым.
 
 Оркестрация та же, что у ``run_generation``: данные -> specs -> решатель ->
 ``persist_result``; отличие в закреплённых парах и запрещённых размещениях.
@@ -66,8 +75,6 @@ def replan_after_disruption(*, run, teacher=None, unavailable_days=None, room=No
     :raises ReplanError: некорректные параметры, неудачный исходный запуск или
         сбой, не затрагивающий ни одной пары.
     """
-    if run.settings_snapshot:
-        raise ReplanError("Перепланирование нового режима не поддерживается: используйте ручной вариант или новый расчёт с сохранёнными настройками.")
     unavailable_days = set(unavailable_days or ())
     _validate(run=run, teacher=teacher, unavailable_days=unavailable_days, room=room)
 
@@ -76,6 +83,90 @@ def replan_after_disruption(*, run, teacher=None, unavailable_days=None, room=No
                 if _is_affected(scheduled, teacher, unavailable_days, room)]
     if not affected:
         raise ReplanError("Сбой не затрагивает ни одной пары запуска.")
+    return _rebuild(run=run, old_classes=old_classes, affected=affected,
+                    teacher=teacher, unavailable_days=unavailable_days, room=room,
+                    forbid_affected=True,
+                    time_limit_seconds=time_limit_seconds, seed=seed)
+
+
+def replan_section(*, run, events=None, days=None, slots=None, rooms=None,
+                   time_limit_seconds: int = 30, seed: int = 17) -> ReplanOutcome:
+    """Частичная перегенерация выбранного участка расписания запуска ``run``.
+
+    Пользователь отмечает участок, который ему не нравится, — любой комбинацией
+    критериев (занятия ``events``, дни недели ``days`` 0=пн…6=вс, конкретные
+    слоты ``slots``, аудитории ``rooms``). Пары запуска, попадающие в участок,
+    снимаются и решаются заново вместе с ними; все остальные пары закрепляются
+    на своих местах (жёстко). Исходный запуск не меняется: результат — новый
+    GenerationRun со списком изменений.
+
+    :raises ReplanError: некорректные параметры, неудачный исходный запуск или
+        пустой выбранный участок.
+    """
+    _validate_section(events=events, days=days, slots=slots, rooms=rooms)
+    _validate_run(run)
+
+    old_classes = list(ScheduledClass.objects.filter(run=run).select_related("slot", "event"))
+    affected = [scheduled for scheduled in old_classes
+                if _in_section(scheduled, events, days, slots, rooms)]
+    if not affected:
+        raise ReplanError("Выбранный участок не затрагивает ни одной пары запуска.")
+    outcome = _rebuild(run=run, old_classes=old_classes, affected=affected,
+                       forbid_affected=False, teacher=None, unavailable_days=set(),
+                       room=None, time_limit_seconds=time_limit_seconds, seed=seed)
+    # Заменить пометку о сбое на описание перегенерируемого участка.
+    new_run = GenerationRun.objects.get(pk=outcome.run_id)
+    section_note = f"Частичная перегенерация запуска #{run.pk}: {_describe_section(events, days, slots, rooms)}."
+    solver_message = new_run.message.split(". ", 1)
+    new_run.message = (f"{section_note} {solver_message[1]}"
+                       if len(solver_message) > 1 else section_note)
+    new_run.save(update_fields=["message"])
+    return outcome
+
+
+def _describe_section(events, days, slots, rooms) -> str:
+    parts = []
+    if events:
+        parts.append(f"занятия {sorted(set(events))}")
+    if days:
+        parts.append(f"дни {sorted(set(days))}")
+    if slots:
+        parts.append(f"слоты {sorted(set(slots))}")
+    if rooms:
+        parts.append(f"аудитории {sorted(set(rooms))}")
+    return "участок — " + "; ".join(parts)
+
+
+def _validate_section(*, events, days, slots, rooms) -> None:
+    criteria = [value for value in (events, days, slots, rooms) if value]
+    if not criteria:
+        raise ReplanError("Укажите участок перегенерации: занятия, дни, слоты или аудитории.")
+    if days is not None and not set(days) <= frozenset(range(7)):
+        raise ReplanError("Дни недели должны быть числами от 0 (пн) до 6 (вс).")
+
+
+def _in_section(scheduled, events, days, slots, rooms) -> bool:
+    if events and scheduled.event_id in events:
+        return True
+    if days and scheduled.slot.day_of_week in days:
+        return True
+    if slots and scheduled.slot_id in slots:
+        return True
+    if rooms and scheduled.room_id in rooms:
+        return True
+    return False
+
+
+def _rebuild(*, run, old_classes, affected, teacher, unavailable_days, room,
+             forbid_affected: bool, time_limit_seconds: int, seed: int) -> ReplanOutcome:
+    """Общая оркестрация перестройки: всё вне ``affected`` закрепляется жёстко.
+
+    Используется и сценарием сбоя (``forbid_affected=True`` — затронутые пары
+    не могут остаться на прежнем месте), и частичной перегенерацией участка
+    (``forbid_affected=False`` — участок решается заново на всех слотах).
+    """
+    if run.settings_snapshot:
+        raise ReplanError("Перепланирование нового режима не поддерживается: используйте ручной вариант или новый расчёт с сохранёнными настройками.")
     affected_ids = {scheduled.id for scheduled in affected}
 
     week_pattern = (old_classes[0].slot.week_pattern if old_classes
@@ -105,6 +196,8 @@ def replan_after_disruption(*, run, teacher=None, unavailable_days=None, room=No
                "room_id": scheduled.room_id}
               for scheduled in old_classes if scheduled.id not in affected_ids]
     forbidden = _forbidden_placements(specs, slots, teacher, unavailable_days)
+    if forbid_affected:
+        forbidden |= {(scheduled.event_id, scheduled.slot_id) for scheduled in affected}
 
     note = f"Перепланирование запуска #{run.pk}: {_describe(teacher, unavailable_days, room)}."
     new_run = GenerationRun.objects.create(
@@ -114,7 +207,7 @@ def replan_after_disruption(*, run, teacher=None, unavailable_days=None, room=No
         result = generate_schedule(
             slots=slots, rooms=rooms, specs=specs, teachers_by_id=load_teacher_limits(),
             config=SolverConfig(time_limit_seconds=time_limit_seconds, seed=seed),
-            pinned=pinned, forbidden=forbidden, fixed_pd=fixed_pd)
+            pinned=pinned, pin_hard=True, forbidden=forbidden, fixed_pd=fixed_pd)
         persist_result(run=new_run, generation_result=result, slots=slots, rooms=rooms,
                        events=events, skipped=skipped, clear_previous=False)
         # persist_result записывает сообщение решателя; пометка о причине запуска не должна теряться
@@ -146,6 +239,11 @@ def _validate(*, run, teacher, unavailable_days, room) -> None:
             raise ReplanError("Дни недели должны быть числами от 0 (пн) до 5 (сб).")
     elif unavailable_days:
         raise ReplanError("Дни недели задаются только для сбоя преподавателя.")
+
+
+def _validate_run(run) -> None:
+    if run.status not in SUCCESSFUL_STATUSES:
+        raise ReplanError("Перепланировать можно только завершённый запуск (SOLVED или PARTIAL).")
 
 
 def _is_affected(scheduled, teacher, unavailable_days, room) -> bool:

@@ -187,6 +187,39 @@ class ReplanResultSerializer(serializers.Serializer):
         help_text="По событиям: что убрано (removed) и что добавлено (added).")
 
 
+class ReplanSectionRequestSerializer(serializers.Serializer):
+    """Участок расписания запуска, который нужно перегенерировать частично.
+
+    Можно выбрать любую комбинацию критериев: занятия, дни недели, слоты или
+    аудитории. Всё, что не попало в участок, остаётся на своих местах.
+    """
+
+    run = serializers.PrimaryKeyRelatedField(
+        queryset=GenerationRun.objects.all(),
+        help_text="Завершённый запуск (SOLVED или PARTIAL), который перестраивается.")
+    events = serializers.ListField(
+        child=serializers.IntegerField(min_value=1), required=False, allow_empty=True,
+        help_text="ID занятий (LessonEvent), пары которых перегенерируются.")
+    days = serializers.ListField(
+        child=serializers.IntegerField(min_value=0, max_value=6), required=False,
+        allow_empty=True, help_text="Дни недели участка: 0 — пн … 6 — вс.")
+    slots = serializers.ListField(
+        child=serializers.IntegerField(min_value=1), required=False, allow_empty=True,
+        help_text="ID конкретных слотов (TimeSlot), пары которых снимаются.")
+    rooms = serializers.ListField(
+        child=serializers.IntegerField(min_value=1), required=False, allow_empty=True,
+        help_text="ID аудиторий, пары в которых перегенерируются.")
+    time_limit_seconds = serializers.IntegerField(required=False, default=30, min_value=1,
+                                                  max_value=600)
+    seed = serializers.IntegerField(required=False, default=17)
+
+    def validate(self, attrs):
+        if not any(attrs.get(name) for name in ("events", "days", "slots", "rooms")):
+            raise serializers.ValidationError(
+                {"detail": "Укажите участок перегенерации: события, дни, слоты или аудитории."})
+        return attrs
+
+
 MAX_COMMON_FREE_STUDENTS = 20
 
 
