@@ -97,7 +97,7 @@ class ScheduleAPITests(TestCase):
         response = self.get_schedule()
         self.assertEqual(response.status_code, 200)
         data = response.json()
-        self.assertEqual(set(data), {"run", "scheduled_classes", "fixed_pd_snapshot", "issues"})
+        self.assertEqual(set(data), {"run", "scheduled_classes", "fixed_pd_snapshot", "issues", "dpo_runs"})
         self.assertEqual(data["run"]["id"], self.run.pk)
         self.assertEqual([c["id"] for c in data["scheduled_classes"]], [self.practice.pk, self.lecture.pk])
         self.assertEqual([p["project_id"] for p in data["fixed_pd_snapshot"]], [self.project.pk])
@@ -242,7 +242,8 @@ class ScheduleAPITests(TestCase):
     def test_empty_period_returns_explicit_empty_response(self):
         response = self.get_schedule(params={"semester": self.semester.pk, "module": self.other_module.pk})
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data, {"run": None, "scheduled_classes": [], "fixed_pd_snapshot": [], "issues": []})
+        self.assertEqual(response.data, {"run": None, "scheduled_classes": [], "fixed_pd_snapshot": [], "issues": [],
+                                         "dpo_runs": []})
 
     def test_legacy_semester_without_module_still_resolves(self):
         legacy = GenerationRun.objects.create(semester=self.semester, status="SOLVED")

@@ -1,4 +1,9 @@
-"""Проекции одного сохранённого запуска: пары и снимок фиксированной ПД."""
+"""Проекции сохранённого запуска: пары и снимок фиксированной ПД.
+
+Расписание студента, преподавателя и группы по умолчанию (без run_id)
+объединяет основной запуск периода с запусками программ ДПО, где участвует
+человек или группа ДПО (merge_dpo_runs).
+"""
 
 from copy import deepcopy
 from datetime import date
@@ -7,7 +12,14 @@ from django.core.exceptions import ValidationError
 from django.db.models import Q
 
 from ..enums import Format, LessonType
-from ..models import GenerationRun, Room, Student, Teacher
+from ..models import (
+    GenerationIssue,
+    GenerationRun,
+    Room,
+    ScheduledClass,
+    Student,
+    Teacher,
+)
 
 
 def resolve_schedule_run(*, semester=None, module=None, run_id=None, week_pattern=None, **_):
@@ -140,3 +152,48 @@ def read_schedule(*, run, kind="all", holder=None, week_pattern=None):
               .select_related("event").distinct().order_by("pk"))
     return {"run": run, "scheduled_classes": classes, "issues": issues,
             "fixed_pd_snapshot": _fixed_pd_for(run, kind, holder, week_pattern)}
+
+
+def latest_dpo_runs(semester, module=None):
+    """Последний успешный запуск каждой программы ДПО, чей период пересекается с
+    периодом (семестр + модуль) основного расписания."""
+    from .dpo import _period_bounds  # dpo.py импортирует генерацию: импорт по месту
+
+    runs = (GenerationRun.objects
+            .filter(semester=semester, status__in=["SOLVED", "PARTIAL"], dpo_program__isnull=False)
+            .select_related("semester", "module").order_by("dpo_program_id", "-created_at", "-pk"))
+    latest = {}
+    for run in runs:
+        latest.setdefault(run.dpo_program_id, run)
+    start, end = _period_bounds(semester, module)
+    result = []
+    for run in latest.values():
+        run_start, run_end = _period_bounds(semester, run.module)
+        if run_start <= end and start <= run_end:
+            result.append(run)
+    return sorted(result, key=lambda run: run.pk)
+
+
+def merge_dpo_runs(result, *, kind, holder, week_pattern=None, dpo_runs=()):
+    """Добавляет к ответу пары и замечания запусков ДПО, относящиеся к человеку.
+
+    ``run`` ответа остаётся основным запуском; номера добавленных запусков - в
+    ``dpo_runs``, у каждой пары свой ``run``.
+    """
+    class_ids = [scheduled.pk for scheduled in result["scheduled_classes"]]
+    issue_ids = [issue.pk for issue in result["issues"]]
+    merged_runs = []
+    for run in dpo_runs:
+        extra = read_schedule(run=run, kind=kind, holder=holder, week_pattern=week_pattern)
+        extra_ids = list(extra["scheduled_classes"].values_list("pk", flat=True))
+        if not extra_ids:
+            continue
+        merged_runs.append(run.pk)
+        class_ids += extra_ids
+        issue_ids += list(extra["issues"].values_list("pk", flat=True))
+    if not merged_runs:
+        return {**result, "dpo_runs": []}
+    classes = (with_schedule_details(ScheduledClass.objects.filter(pk__in=class_ids))
+               .order_by("slot__day_of_week", "slot__lesson_number", "pk"))
+    issues = GenerationIssue.objects.filter(pk__in=issue_ids).select_related("event").order_by("pk")
+    return {**result, "scheduled_classes": classes, "issues": issues, "dpo_runs": merged_runs}

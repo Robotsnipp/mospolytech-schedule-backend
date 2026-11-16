@@ -1,7 +1,7 @@
 [project]
 name = "mospolytech-schedule-backend"
 version = "0.1.0"
-description = "Add your description here"
+description = "Генерация и выдача расписания Московского Политеха: CP-SAT, rasp.dmami.ru, мероприятия, ДПО"
 readme = "README.md"
 authors = [
     { name = "Krasnov Rodion Denisovic", email = "rodion.dict@gmail.com" }
@@ -17,9 +17,6 @@ dependencies = [
     "whitenoise>=6.6.0",
     "psycopg2-binary>=2.9.13",
 ]
-
-[project.scripts]
-mospolytech-schedule-backend = "mospolytech_schedule_backend:main"
 
 [build-system]
 requires = ["uv_build>=0.12.18,<0.13.0"]

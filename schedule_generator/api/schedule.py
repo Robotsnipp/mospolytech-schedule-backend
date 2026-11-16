@@ -43,3 +43,7 @@ class ScheduleResponseSerializer(serializers.Serializer):
     scheduled_classes = ScheduledClassSerializer(many=True)
     fixed_pd_snapshot = FixedPDSessionSerializer(many=True)
     issues = GenerationIssueSerializer(many=True)
+    dpo_runs = serializers.ListField(
+        child=serializers.IntegerField(), default=list,
+        help_text="Запуски программ ДПО, чьи пары добавлены к личному расписанию "
+                  "(только без run_id; для студента, преподавателя и группы).")

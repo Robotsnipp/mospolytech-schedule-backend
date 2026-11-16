@@ -1,4 +1,8 @@
-"""Публичный read-only API расписания: /api/rasp/..."""
+"""Публичный API реального расписания rasp.dmami.ru: /api/rasp/...
+
+Чтение открыто без входа. Запись выбора ПД привязана к идентификатору
+браузера (owner), как и запись на физкультуру.
+"""
 
 from __future__ import annotations
 
@@ -6,6 +10,8 @@ from datetime import date
 
 from django.db.models import Count, Q
 from django.http import HttpResponse
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
@@ -13,6 +19,19 @@ from rest_framework.response import Response
 from . import calendar, pd_service
 from .models import Group, Lesson, PDEnrollment, PDProject, Room, Teacher
 from .pair_times import PAIR_TIMES, VIRTUAL_LOCATIONS, VIRTUAL_MARKERS
+
+TAG = ["Реальное расписание (rasp)"]
+PD_TAG = ["Проектная деятельность (rasp)"]
+SESSION_PARAM = OpenApiParameter("session", OpenApiTypes.STR, enum=["0", "1"],
+                                 description="1 - расписание сессии, иначе семестр")
+SLOT_PARAMS = [
+    OpenApiParameter("weekday", OpenApiTypes.INT, required=True, description="День недели 1-7 (1 = пн)"),
+    OpenApiParameter("pair", OpenApiTypes.INT, required=True, description="Номер пары 1-7"),
+    OpenApiParameter("date", OpenApiTypes.DATE, description="Дата (по умолчанию сегодня)"),
+]
+NOT_FOUND = OpenApiResponse(OpenApiTypes.OBJECT, description="{\"detail\": ...} - не найдено")
+BAD_REQUEST = OpenApiResponse(OpenApiTypes.OBJECT, description="{\"detail\": ...} - ошибка ввода")
+ICS = {(200, "text/calendar"): OpenApiTypes.BINARY, 404: NOT_FOUND}
 
 
 def lesson_dict(lesson: Lesson, with_group: bool = False) -> dict:
@@ -53,6 +72,7 @@ def _group_dict(group: Group, lessons_count: int | None = None) -> dict:
     return data
 
 
+@extend_schema(summary="Время пар", tags=TAG, responses={200: OpenApiTypes.OBJECT})
 @api_view(["GET"])
 @permission_classes([])
 def pair_times(request):
@@ -60,6 +80,7 @@ def pair_times(request):
                      for n, (s, e) in PAIR_TIMES.items()])
 
 
+@extend_schema(summary="Группы", tags=TAG, parameters=[OpenApiParameter("q", OpenApiTypes.STR, description="Поиск по названию"), OpenApiParameter("with_lessons", OpenApiTypes.STR, enum=["1"], description="Только группы с занятиями")], responses={200: OpenApiTypes.OBJECT})
 @api_view(["GET"])
 @permission_classes([])
 def groups(request):
@@ -72,6 +93,7 @@ def groups(request):
     return Response([_group_dict(g, g.lessons_count) for g in qs])
 
 
+@extend_schema(summary="Занятия группы", tags=TAG, parameters=[SESSION_PARAM], responses={200: OpenApiTypes.OBJECT, 404: NOT_FOUND})
 @api_view(["GET"])
 @permission_classes([])
 def group_lessons(request, title):
@@ -83,6 +105,7 @@ def group_lessons(request, title):
                      "lessons": [lesson_dict(item) for item in lessons]})
 
 
+@extend_schema(summary="Преподаватели с занятиями", tags=TAG, parameters=[OpenApiParameter("q", OpenApiTypes.STR, description="Поиск по ФИО"), OpenApiParameter("vacancies", OpenApiTypes.STR, enum=["1"], description="Показывать вакансии")], responses={200: OpenApiTypes.OBJECT})
 @api_view(["GET"])
 @permission_classes([])
 def teachers(request):
@@ -95,6 +118,7 @@ def teachers(request):
     return Response([{"id": t.id, "name": t.name, "is_vacancy": t.is_vacancy} for t in qs])
 
 
+@extend_schema(summary="Занятия преподавателя", tags=TAG, parameters=[SESSION_PARAM], responses={200: OpenApiTypes.OBJECT, 404: NOT_FOUND})
 @api_view(["GET"])
 @permission_classes([])
 def teacher_lessons(request, teacher_id):
@@ -140,6 +164,7 @@ def _personal_events(request, group: Group, lessons: list[Lesson]) -> list[calen
     return events
 
 
+@extend_schema(summary="Календарь группы (.ics)", tags=TAG, parameters=[SESSION_PARAM, OpenApiParameter("owner", OpenApiTypes.STR, description="Идентификатор браузера: добавить свою физкультуру и проект")], responses=ICS)
 @api_view(["GET"])
 @permission_classes([])
 def group_calendar(request, title):
@@ -158,6 +183,7 @@ def group_calendar(request, title):
                               f"schedule-{calendar.safe_filename(group.title)}.ics", text)
 
 
+@extend_schema(summary="Календарь преподавателя (.ics)", tags=TAG, parameters=[SESSION_PARAM], responses=ICS)
 @api_view(["GET"])
 @permission_classes([])
 def teacher_calendar(request, teacher_id):
@@ -175,6 +201,7 @@ def teacher_calendar(request, teacher_id):
                               f"schedule-teacher-{teacher.id}.ics", text)
 
 
+@extend_schema(summary="Свободные аудитории в пару", tags=TAG, parameters=[*SLOT_PARAMS, OpenApiParameter("q", OpenApiTypes.STR, description="Поиск по аудитории или адресу")], responses={200: OpenApiTypes.OBJECT, 400: BAD_REQUEST})
 @api_view(["GET"])
 @permission_classes([])
 def free_rooms(request):
@@ -210,6 +237,7 @@ def _is_physical(room: Room) -> bool:
             and not room.name.startswith("_") and not any(m in text for m in VIRTUAL_MARKERS))
 
 
+@extend_schema(summary="Занятость всех аудиторий в пару", tags=TAG, parameters=SLOT_PARAMS, responses={200: OpenApiTypes.OBJECT, 400: BAD_REQUEST})
 @api_view(["GET"])
 @permission_classes([])
 def rooms_status(request):
@@ -276,12 +304,14 @@ def project_dict(project: PDProject) -> dict:
     }
 
 
+@extend_schema(summary="Направления ПД", tags=PD_TAG, responses={200: OpenApiTypes.OBJECT})
 @api_view(["GET"])
 @permission_classes([])
 def pd_directions(request):
     return Response(pd_service.directions())
 
 
+@extend_schema(summary="Проекты ПД", tags=PD_TAG, parameters=[OpenApiParameter("direction", OpenApiTypes.STR), OpenApiParameter("q", OpenApiTypes.STR, description="Поиск по названию или руководителю")], responses={200: OpenApiTypes.OBJECT})
 @api_view(["GET"])
 @permission_classes([])
 def pd_projects(request):
@@ -300,6 +330,12 @@ def _enrollment_dict(enrollment: PDEnrollment) -> dict:
             "project": project_dict(enrollment.project)}
 
 
+@extend_schema(methods=["GET"], summary="Выбор ПД владельца", tags=PD_TAG,
+               parameters=[OpenApiParameter("owner", OpenApiTypes.STR, required=True)],
+               responses={200: OpenApiTypes.OBJECT})
+@extend_schema(methods=["POST"], summary="Выбрать проект ПД", tags=PD_TAG, request=OpenApiTypes.OBJECT,
+               description="Тело: {owner, group_title, project}. Новый выбор заменяет прежний.",
+               responses={201: OpenApiTypes.OBJECT, 400: BAD_REQUEST, 404: NOT_FOUND})
 @api_view(["GET", "POST"])
 @permission_classes([])
 def pd_enrollments(request):
@@ -322,6 +358,7 @@ def pd_enrollments(request):
     return Response(_enrollment_dict(enrollment), status=status.HTTP_201_CREATED)
 
 
+@extend_schema(summary="Отменить выбор ПД", tags=PD_TAG, parameters=[OpenApiParameter("owner", OpenApiTypes.STR, required=True)], responses={204: None, 403: BAD_REQUEST, 404: NOT_FOUND})
 @api_view(["DELETE"])
 @permission_classes([])
 def pd_enrollment_delete(request, enrollment_id):
