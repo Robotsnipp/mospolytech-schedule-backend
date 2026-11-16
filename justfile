@@ -11,3 +11,15 @@ resetdb:
 
 import-schedule:
     uv run python manage.py import_rasp
+
+# Тесты всех приложений на отдельной SQLite-БД
+test:
+    uv run python manage.py test schedule_generator rasp events
+
+# Линтер (та же версия, что в CI)
+lint:
+    uvx ruff==0.17.0 check .
+
+# Проверка, что нет незаписанных изменений моделей
+check-migrations:
+    uv run python manage.py makemigrations --check --dry-run

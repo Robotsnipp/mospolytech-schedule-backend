@@ -1,5 +1,56 @@
 # mospolytech-schedule-backend
 
+Бэкенд расписания Московского Политеха на Django + DRF. Он строит расписание
+решателем CP-SAT (OR-Tools), отдаёт реальное расписание с rasp.dmami.ru и ведёт
+каталог мероприятий для студентов.
+
+## О проекте
+
+| Приложение | Адрес API | Что делает |
+|---|---|---|
+| `schedule_generator` | `/api/schedule/` | Учебные планы, нагрузка, генерация недельного расписания CP-SAT, перепланирование, ручные варианты, ПД, физкультура, программы ДПО, чтение расписания группы, студента и преподавателя |
+| `rasp` | `/api/rasp/` | Реальное расписание групп и преподавателей с rasp.dmami.ru, свободные аудитории, календарь `.ics`, выбор проектной деятельности |
+| `events` | `/api/events/` | Каталог мероприятий вуза и Москвы, свободные периоды для набора групп |
+| `dev_dashboard` | `/__dev/` | Панель разработчика с проверками и запуском генерации (только при `DEBUG=True`) |
+
+Документация API: Swagger `/api/docs/`, схема `/api/schema/`. Описание возможностей,
+проверок и ограничений: [docs/FEATURES.md](docs/FEATURES.md), правила генерации:
+[docs/SCHEDULING_RULES.md](docs/SCHEDULING_RULES.md), предметные термины: [CONTEXT.md](CONTEXT.md).
+
+## Быстрый старт
+
+Нужны Python 3.11+ и [uv](https://docs.astral.sh/uv/).
+
+```sh
+uv sync
+cp .env.example .env            # Windows: copy .env.example .env
+uv run python manage.py migrate
+uv run python manage.py createsuperuser
+uv run python manage.py runserver
+```
+
+По умолчанию `.env.example` включает SQLite и `DEBUG=True`; для PostgreSQL задайте
+`DB_ENGINE` и `POSTGRES_*`. После запуска откройте `http://127.0.0.1:8000/api/docs/`
+и `/admin/`.
+
+Данные для примера:
+
+```sh
+uv run python manage.py import_events data/events/events_2025.json   # мероприятия
+uv run python manage.py load_pe                                      # физкультура
+uv run python manage.py import_pd                                    # проекты ПД из кэша
+uv run python manage.py import_rasp --groups 231-333                 # реальное расписание группы
+```
+
+Команды `just`: `just run`, `just migrate`, `just test`, `just lint`, `just check-migrations`.
+
+Docker: образ из `Dockerfile` при старте выполняет `collectstatic`, `migrate`,
+загрузку физкультуры и ПД и запускает gunicorn на порту 8000; нужны переменные
+`SECRET_KEY`, `ALLOWED_HOSTS` и настройки БД (как в `.env.example`).
+
+Генерация расписания (`POST /api/schedule/generate/`) намеренно открыта без входа
+для фронтенда генерации; изменение справочников требует входа администратора.
+
 ## Сетка звонков и раздел генерации
 
 `GET /api/schedule/generation-options/` возвращает именно подготовленные данные
@@ -283,10 +334,11 @@ ID условные. Последний маршрут возвращает св
 ## Проверка
 
 ```sh
-SECRET_KEY=local-test-only DB_ENGINE=sqlite python manage.py migrate
-SECRET_KEY=local-test-only DB_ENGINE=sqlite python manage.py test schedule_generator
-SECRET_KEY=local-test-only DB_ENGINE=sqlite python manage.py import_rasp --groups 231-333
-SECRET_KEY=local-test-only DB_ENGINE=sqlite python manage.py test events
+SECRET_KEY=local-test-only DB_ENGINE=sqlite uv run python manage.py migrate
+SECRET_KEY=local-test-only DB_ENGINE=sqlite uv run python manage.py test schedule_generator rasp events
+SECRET_KEY=local-test-only DB_ENGINE=sqlite uv run python manage.py makemigrations --check --dry-run
+SECRET_KEY=local-test-only DB_ENGINE=sqlite uv run python manage.py spectacular --validate --fail-on-warn --file /dev/null
+uvx ruff==0.17.0 check .
 ```
 
 Тесты проверяют импорт плана и подготовку часов, реальный решатель, фильтрацию
@@ -394,7 +446,8 @@ uv run python manage.py import_pd_schedule output/parser-prototype/activities/pd
 `.github/workflows/checks.yml` запускается на PR и push в `main`:
 ошибки Python, импорты, современный синтаксис, потенциальные баги,
 упрощения и соглашения Django (Ruff), проверки Django,
-актуальность и применение миграций, тесты и демо-генерация. Для CI используется
+актуальность и применение миграций, тесты `schedule_generator`, `rasp`, `events`
+и проверка OpenAPI-схемы без предупреждений. Для CI используется
 Python 3.12; зависимости устанавливаются через `uv sync --locked --no-install-project`
 из `uv.lock`. Форматирование и проверка типов пока не включены.
 
@@ -438,7 +491,8 @@ JSON/CSV-файлы, с сохранением исходников и офла�
 [prototypes/activity_parser](prototypes/activity_parser/README.md).
 
 Парсеры сами не пишут в БД. Проверенные учебный план и ПД подключаются отдельными
-командами выше. Импорт предложений физкультуры в приложение пока не реализован.
+командами выше. Слоты физкультуры загружаются командой `load_pe` (раздел
+«Физкультура» ниже); в генерацию расписания физкультура не входит.
 
 ## Реальное расписание rasp.dmami.ru (приложение `rasp`)
 
