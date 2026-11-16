@@ -12,6 +12,10 @@ resetdb:
 import-schedule:
     uv run python manage.py import_rasp
 
+# Полный демо-пример (повторно - пересоздаёт)
+demo:
+    uv run python manage.py seed_demo --reset
+
 # Тесты всех приложений на отдельной SQLite-БД
 test:
     uv run python manage.py test schedule_generator rasp events

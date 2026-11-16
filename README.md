@@ -33,7 +33,15 @@ uv run python manage.py runserver
 `DB_ENGINE` и `POSTGRES_*`. После запуска откройте `http://127.0.0.1:8000/api/docs/`
 и `/admin/`.
 
-Данные для примера:
+Полный пример одной командой, без внешних файлов: семестр, 2 группы по 12 студентов,
+преподаватели, аудитории, генерация расписания CP-SAT, программа ДПО поверх него и
+мероприятия. В конце команда печатает адреса, которые стоит открыть.
+
+```sh
+uv run python manage.py seed_demo            # повторно: seed_demo --reset
+```
+
+Остальные данные:
 
 ```sh
 uv run python manage.py import_events data/events/events_2025.json   # мероприятия
@@ -42,7 +50,7 @@ uv run python manage.py import_pd                                    # прое�
 uv run python manage.py import_rasp --groups 231-333                 # реальное расписание группы
 ```
 
-Команды `just`: `just run`, `just migrate`, `just test`, `just lint`, `just check-migrations`.
+Команды `just`: `just run`, `just migrate`, `just demo`, `just test`, `just lint`, `just check-migrations`.
 
 Docker: образ из `Dockerfile` при старте выполняет `collectstatic`, `migrate`,
 загрузку физкультуры и ПД и запускает gunicorn на порту 8000; нужны переменные
