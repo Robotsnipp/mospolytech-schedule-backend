@@ -65,6 +65,8 @@ from ..services.replan import ReplanError, replan_after_disruption
 from ..services.rooms import free_rooms, slot_at, university_now
 from ..services.run_report import build_wellbeing_report
 from ..services.schedule_read import (
+    latest_dpo_runs,
+    merge_dpo_runs,
     read_schedule,
     resolve_schedule_run,
     with_schedule_details,
@@ -788,8 +790,13 @@ class ScheduleReadViewSet(viewsets.ViewSet):
             return Response({"detail": "Запуск генерации не найден."}, status=status.HTTP_404_NOT_FOUND)
         except ValidationError as exc:
             raise APIValidationError(exc.message_dict) from exc
-        result = read_schedule(run=run, kind=kind, holder=holder,
-                               week_pattern=serializer.validated_data.get("week_pattern"))
+        week_pattern = serializer.validated_data.get("week_pattern")
+        result = read_schedule(run=run, kind=kind, holder=holder, week_pattern=week_pattern)
+        data = serializer.validated_data
+        if kind in ("student", "teacher", "group") and data.get("run_id") is None and data.get("semester"):
+            # Основной запуск + пары программ ДПО этого человека или группы ДПО.
+            result = merge_dpo_runs(result, kind=kind, holder=holder, week_pattern=week_pattern,
+                                    dpo_runs=latest_dpo_runs(data["semester"], data.get("module")))
         return Response(ScheduleResponseSerializer(
             result, context={"holder_kind": kind, "holder": holder}).data)
 
