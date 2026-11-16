@@ -31,6 +31,7 @@ from django.db.models import Q
 from ..enums import LessonType
 from ..models import (
     FixedProjectSession,
+    GenerationIssue,
     GenerationRun,
     LessonEvent,
     Room,
@@ -45,6 +46,7 @@ from .event_specs import build_event_specs
 from .fixed_pd import load_fixed_pd
 from .generator import generate_schedule
 from .result_writer import persist_result
+from .teacher_limits import weekly_limit_warnings
 
 
 class GenerationError(Exception):
@@ -209,6 +211,9 @@ def run_generation(*, semester, week_pattern=None, time_limit_seconds=30,
         persist_result(run=run, generation_result=generation_result,
                        slots=slots, rooms=rooms, events=events,
                        skipped=skipped, clear_previous=clear_previous)
+        # Недельный лимит преподавателя - проверка результата (см. teacher_limits.py).
+        for text in weekly_limit_warnings(generation_result.assignments, specs, fixed_pd):
+            GenerationIssue.objects.create(run=run, event=None, level="WARNING", text=text)
     except GenerationError as exc:
         exc.run_id = run.pk
         run.status = "ERROR"
